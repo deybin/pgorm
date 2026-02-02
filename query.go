@@ -1,95 +1,70 @@
 package pgorm
 
 import (
-	"errors"
 	"fmt"
 	"log"
-	"reflect"
 	"strings"
 
+	"github.com/deybin/pgorm/clause"
+	"github.com/deybin/pgorm/internal"
+	"github.com/deybin/pgorm/logger"
+	"github.com/deybin/pgorm/schema"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Query struct {
-	Table         string
 	query         sintaxis
 	rowSql        pgx.Rows
 	colSql        []string
-	conn          *Connection
+	conn          *internal.Connection
 	err           error
-	argsLen       int
-	args          []interface{}
 	sessionActiva bool
 }
 
 /** guarda la estructura de consulta sql, aparir de aquí se generar la consulta sql */
 type sintaxis struct {
-	Select        string
-	Where         string
-	Join          []string
-	Top           string
-	OrderBy       string
-	GroupBy       string
+	From          clause.From
+	Select        clause.Select
+	Where         clause.Where
+	Join          clause.Join
+	Limit         clause.Limit
+	OrderBy       clause.OrderBy
+	GroupBy       clause.GroupBy
+	argsLen       int
+	args          []interface{}
 	queryFull     string /** guarda la consulta sql directa en string */
 	workQueryFull bool   /** establece si se va a utilizar una consulta directa mediante queryFull o mediante la estructura true:= se considerara queryFull false:= se considerara  estructura para formar la consulta sql*/
 }
 
-type QConfig struct {
+type Config struct {
 	Cloud     bool
 	Database  string
 	Procedure bool
 }
 
-/** operaciones utilizadas con la sentencia WHERE*/
-type OperatorWhere string
-
-const (
-	I           OperatorWhere = "="
-	D           OperatorWhere = "<>"
-	MY          OperatorWhere = ">"
-	MYI         OperatorWhere = ">="
-	MN          OperatorWhere = "<"
-	MNI         OperatorWhere = "<="
-	LIKE        OperatorWhere = "LIKE"
-	IN          OperatorWhere = "IN"
-	NOT_IN      OperatorWhere = "NOT IN"
-	BETWEEN     OperatorWhere = "BETWEEN"
-	NOT_BETWEEN OperatorWhere = "NOT BETWEEN"
-)
-
-/** Tipos de Join a utilizar en la consulta*/
-
-type TypeJoin string
-
-const (
-	INNER TypeJoin = "INNER JOIN"
-	LEFT  TypeJoin = "LEFT JOIN"
-	RIGHT TypeJoin = "RIGHT JOIN"
-	FULL  TypeJoin = "FULL OUTER JOIN"
-)
-
-func (q *Query) New(config QConfig) *Query {
+func NewQuery(config Config) *Query {
 	var err error
+	var q Query
 	if config.Cloud {
-		if q.conn, err = new(Connection).New("").PoolMaster(); err != nil {
+		if q.conn, err = new(internal.Connection).New("").PoolMaster(); err != nil {
 			q.err = err
-			return q
+			return &q
 		}
 	} else {
-		if q.conn, err = new(Connection).New(config.Database).Pool(); err != nil {
+		if q.conn, err = new(internal.Connection).New(config.Database).NewPool(); err != nil {
 			q.err = err
-			return q
+			return &q
 		}
 	}
 	//q.procedure = config.Procedure
 
-	// if _, err = q.conn.GetCnn().Exec(q.conn.context, "SET search_path TO public"); err != nil {
+	// if _, err = q.conn.GetCnn().Exec(q.conn.Context(), "SET search_path TO public"); err != nil {
 	// 	q.err = err
 	// 	return q
 	// }
-	return q
+	return &q
 }
 
 /*
@@ -111,19 +86,19 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Query) SetQueryString(query string, arg ...interface{}) *Query {
+func (q *Query) WorkQueryFull(query string, arg ...interface{}) *Query {
 	q.query.workQueryFull = true
 	q.query.queryFull = query
 	if arg == nil {
 		return q
 	}
-	q.args = append(q.args, arg...)
+	q.query.args = append(q.query.args, arg...)
 
 	return q
 }
 
 /*
-SetTable establece el nombre de la tabla que se utilizará en la consulta SQL.
+From establece el nombre de la tabla que se utilizará en la consulta SQL.
 
 Esta función define el nombre de la tabla principal sobre la cual se realizarán
 las operaciones SQL (SELECT, JOIN, WHERE, etc.). Es esencial establecer esta propiedad
@@ -132,7 +107,7 @@ antes de construir la consulta.
 Ejemplo de uso:
 
 	queryBuilder := new(pgorm.Query).New(pgorm.QConfig{Database: "my_database"})
-	queryBuilder.SetTable("my_table").Select("id", "nombre")
+	queryBuilder.From("my_table").Select("id", "nombre")
 
 Parámetros:
   - table (string): Nombre de la tabla como string.
@@ -140,8 +115,8 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Query) SetTable(table string) *Query {
-	q.Table = table
+func (q *Query) From(table schema.Schema) *Query {
+	q.query.From.Table = table.Name()
 	return q
 }
 
@@ -165,12 +140,9 @@ Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
 func (q *Query) Select(campos ...string) *Query {
-	if len(campos) == 0 {
-		q.query.Select = "SELECT * FROM " + q.Table
-	} else {
-		q.query.Select = "SELECT " + strings.Join(campos, ",") + " FROM " + q.Table
+	if len(campos) > 0 {
+		q.query.Select.Columns = append(q.query.Select.Columns, campos...)
 	}
-
 	return q
 }
 
@@ -195,15 +167,8 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Query) Where(where string, op OperatorWhere, arg interface{}) *Query {
-	q.argsLen = 1
-	q.args = []interface{}{}
-	argString, err := q.getSintaxisFilter(op, arg)
-	if err != nil {
-		q.err = err
-		return q
-	}
-	q.query.Where = fmt.Sprintf(" WHERE %s %s %s", where, op, argString)
+func (q *Query) Where(where string, op clause.OperatorWhere, arg interface{}) *Query {
+	q.query.Where.Set(clause.ExpressionFilter{Name: q.query.Where.Name(), Column: where, Operators: op, Args: arg})
 	return q
 }
 
@@ -228,16 +193,8 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Query) And(and string, op OperatorWhere, arg interface{}) *Query {
-	if q.query.Where == "" {
-		return q
-	}
-	argString, err := q.getSintaxisFilter(op, arg)
-	if err != nil {
-		q.err = err
-		return q
-	}
-	q.query.Where += fmt.Sprintf(" AND %s %s %s", and, op, argString)
+func (q *Query) And(and string, op clause.OperatorWhere, arg interface{}) *Query {
+	q.query.Where.Set(clause.ExpressionFilter{Name: q.query.Where.And(), Column: and, Operators: op, Args: arg})
 	return q
 }
 
@@ -262,16 +219,8 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Query) Or(or string, op OperatorWhere, arg interface{}) *Query {
-	if q.query.Where == "" {
-		return q
-	}
-	argString, err := q.getSintaxisFilter(op, arg)
-	if err != nil {
-		q.err = err
-		return q
-	}
-	q.query.Where += fmt.Sprintf(" OR %s %s %s", or, op, argString)
+func (q *Query) Or(or string, op clause.OperatorWhere, arg interface{}) *Query {
+	q.query.Where.Set(clause.ExpressionFilter{Name: q.query.Where.Or(), Column: or, Operators: op, Args: arg})
 	return q
 }
 
@@ -294,7 +243,7 @@ Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
 func (q *Query) OrderBy(campos ...string) *Query {
-	q.query.OrderBy = " ORDER BY " + strings.Join(campos, ",")
+	q.query.OrderBy.Set(campos...)
 	return q
 }
 
@@ -318,7 +267,7 @@ Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
 func (q *Query) Top(top int) *Query {
-	q.query.Top = fmt.Sprintf(" LIMIT %d", top)
+	q.query.Limit.Set(top)
 	return q
 }
 
@@ -349,14 +298,7 @@ Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
 func (q *Query) Limit(limit ...int) *Query {
-	if len(limit) == 2 {
-		q.query.Top = fmt.Sprintf(" LIMIT %d OFFSET %d", limit[0], limit[1])
-	} else if len(limit) == 1 {
-		q.query.Top = fmt.Sprintf(" LIMIT %d", limit[0])
-	} else {
-		q.query.Top = " LIMIT 1"
-	}
-
+	q.query.Limit.Set(limit...)
 	return q
 }
 
@@ -379,10 +321,7 @@ Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
 func (q *Query) GroupBy(group ...string) *Query {
-	if len(group) <= 0 {
-		return q
-	}
-	q.query.GroupBy = fmt.Sprintf(" GROUP BY %s", strings.Join(group, ","))
+	q.query.GroupBy.Set(group...)
 	return q
 }
 
@@ -409,8 +348,13 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Query) Join(tp TypeJoin, table string, on string) *Query {
-	q.query.Join = append(q.query.Join, fmt.Sprintf(" %s  %s ON %s", tp, table, on))
+func (q *Query) Join(tp clause.TypeJoin, table schema.Schema, on string) *Query {
+	q.query.Join.Expressions = append(q.query.Join.Expressions, clause.ExpressionJoin{
+		Type:      tp,
+		Table:     table.Name(),
+		Alias:     "",
+		Condition: on,
+	})
 	return q
 }
 
@@ -437,20 +381,15 @@ func (q *Query) Exec() *Query {
 	}
 
 	q.sessionActiva = false
-	queryString := q.getQuery()
+	queryString := q.build()
 	// fmt.Println("query:", queryString)
 
-	rows, err := q.conn.pool.Query(q.conn.context, queryString, q.args...)
+	rows, err := q.conn.Pool().Query(q.conn.Context(), queryString, q.query.args...)
 	if err != nil {
 		q.err = err
 		return q
 	}
 
-	// fieldDescs := rows.FieldDescriptions()
-	// q.colSql = make([]string, len(fieldDescs))
-	// for i, fd := range fieldDescs {
-	// 	q.colSql[i] = string(fd.Name)
-	// }
 	q.rowSql = rows
 	q.keyFieldName()
 	return q
@@ -471,7 +410,7 @@ como procedimientos (`CALL`, `PROCEDURE`).
 - Si se trata de una consulta `SELECT`, almacena los resultados (`pgx.Rows`) en `q.rowSql` y los nombres de las columnas en `q.colSql`.
 - Si la consulta no retorna resultados (`INSERT`, `UPDATE`, `DELETE`, etc.), la ejecuta directamente y captura cualquier error.
 
-Utiliza el contexto (`q.conn.context`) asociado a la conexión para soportar cancelación y timeout.
+Utiliza el contexto (`q.conn.Context()`) asociado a la conexión para soportar cancelación y timeout.
 
 Ejemplo de uso:
 
@@ -493,10 +432,10 @@ func (q *Query) ExecCtx() *Query {
 	}
 	q.sessionActiva = true
 
-	queryString := q.getQuery()
+	queryString := q.build()
 	// fmt.Println("query:", queryString)
 
-	rows, err := q.conn.pool.Query(q.conn.context, queryString, q.args...)
+	rows, err := q.conn.Pool().Query(q.conn.Context(), queryString, q.query.args...)
 	if err != nil {
 		q.err = err
 		return q
@@ -538,11 +477,11 @@ func (q *Query) Procedure() error {
 	q.sessionActiva = false
 
 	defer q.conn.Close()
-	queryString := q.getQuery()
+	queryString := q.build()
 	//fmt.Println("query:", queryString)
-	fmt.Println(len(q.args), q.args)
+	fmt.Println(len(q.query.args), q.query.args)
 
-	if _, err := q.conn.pool.Exec(q.conn.context, queryString, q.args...); err != nil {
+	if _, err := q.conn.Pool().Exec(q.conn.Context(), queryString, q.query.args...); err != nil {
 		q.err = err
 		return err
 	}
@@ -585,10 +524,10 @@ func (q *Query) ProcedureCtx() error {
 	}
 
 	q.sessionActiva = true
-	queryString := q.getQuery()
+	queryString := q.build()
 	// fmt.Println("query:", queryString)
 
-	if _, err := q.conn.pool.Exec(q.conn.context, queryString, q.args...); err != nil {
+	if _, err := q.conn.Pool().Exec(q.conn.Context(), queryString, q.query.args...); err != nil {
 		q.err = err
 		return err
 	}
@@ -621,7 +560,7 @@ func (q *Query) One() (map[string]interface{}, error) {
 	m := make(map[string]interface{})
 	if q.err != nil {
 		log.Printf("check failed: %v", q.err)
-		return m, ManagerErrors{}.SqlQuery(q.err)
+		return m, logger.ManagerErrors{}.SqlQuery(q.err)
 	}
 
 	if !q.sessionActiva {
@@ -634,7 +573,7 @@ func (q *Query) One() (map[string]interface{}, error) {
 		row, err := q.builderResult()
 		if err != nil {
 			log.Printf("check failed: %v", err)
-			return map[string]interface{}{}, ManagerErrors{}.SqlQuery(err)
+			return map[string]interface{}{}, logger.ManagerErrors{}.SqlQuery(err)
 		}
 		row = q.normalizeRow(row, fieldDescs)
 		m = row
@@ -669,7 +608,7 @@ func (q *Query) Text(columna string) (interface{}, error) {
 
 	if q.err != nil {
 		log.Printf("check failed: %v", q.err)
-		return nil, ManagerErrors{}.SqlQuery(q.err)
+		return nil, logger.ManagerErrors{}.SqlQuery(q.err)
 	}
 
 	if !q.sessionActiva {
@@ -683,7 +622,7 @@ func (q *Query) Text(columna string) (interface{}, error) {
 		row, err := q.builderResult()
 		if err != nil {
 			log.Printf("check failed: %v", err)
-			return nil, ManagerErrors{}.SqlQuery(err)
+			return nil, logger.ManagerErrors{}.SqlQuery(err)
 		}
 		row = q.normalizeRow(row, fieldDescs)
 		m = row
@@ -713,7 +652,7 @@ func (q *Query) All() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 	if q.err != nil {
 		log.Printf("check failed: %v", q.err)
-		return result, ManagerErrors{}.SqlQuery(q.err)
+		return result, logger.ManagerErrors{}.SqlQuery(q.err)
 	}
 
 	if !q.sessionActiva {
@@ -727,7 +666,7 @@ func (q *Query) All() ([]map[string]interface{}, error) {
 		row, err := q.builderResult()
 		if err != nil {
 			log.Printf("check failed: %v", err)
-			return []map[string]interface{}{}, ManagerErrors{}.SqlQuery(err)
+			return []map[string]interface{}{}, logger.ManagerErrors{}.SqlQuery(err)
 		}
 		row = q.normalizeRow(row, fieldDescs)
 		result = append(result, row)
@@ -779,7 +718,7 @@ func (q *Query) builderResult() (map[string]interface{}, error) {
 	// Scan the result into the column pointers...
 	if err := q.rowSql.Scan(columnPointers...); err != nil {
 		log.Printf("check failed: %v", err)
-		return map[string]interface{}{}, ManagerErrors{}.SqlQuery(err)
+		return map[string]interface{}{}, logger.ManagerErrors{}.SqlQuery(err)
 	}
 
 	//Crea nuestro mapa y recupera el valor de cada columna del segmento de punteros, almacenándolo en el mapa con el nombre de la columna como clave.
@@ -826,7 +765,7 @@ func (q *Query) keyFieldName() {
 }
 
 /*
-GetQuery devuelve la cadena completa de la consulta SQL construida con los métodos del struct Querys.
+build devuelve la cadena completa de la consulta SQL construida con los métodos del struct Querys.
 
 Esta función compone y retorna la consulta SQL generada hasta el momento, integrando las cláusulas
 SELECT, JOIN, WHERE, GROUP BY, ORDER BY, LIMIT o TOP, según hayan sido definidas previamente.
@@ -836,85 +775,30 @@ Es útil para depurar o inspeccionar la consulta antes de ejecutarla.
 Devuelve:
   - Una cadena (`string`) que representa la consulta SQL completa construida.
 */
-func (q *Query) getQuery() string {
-	var queryString string
+func (q *Query) build() string {
+	var querySql strings.Builder
+	// var queryString string
 	if !q.query.workQueryFull {
-		queryString = q.query.Select
-		/** aplicando los join  inner join, left join y right join*/
-		if len(q.query.Join) > 0 {
-			for _, v := range q.query.Join {
-				queryString += v
-			}
-		}
+		querySql.WriteString(q.query.Select.Build())
+		querySql.WriteString(q.query.From.Build())
+		querySql.WriteString(q.query.Join.Build())
 		/** aplicando Where : where ,and ,or ,in, between ,not in ,not between*/
-		queryString += q.query.Where
+		querySql.WriteString(q.query.Where.Build())
+		q.query.args = q.query.Where.FindArguments()
+		q.query.argsLen = q.query.Where.FindArgumentsLen()
 
 		/** aplicando Group by*/
-		queryString += q.query.GroupBy
+		querySql.WriteString(q.query.GroupBy.Build())
 
 		/** aplicando order by  */
-		queryString += q.query.OrderBy
+		querySql.WriteString(q.query.OrderBy.Build())
 		/** aplicando Top y LImit  */
-		queryString += q.query.Top
+		querySql.WriteString(q.query.Limit.Build())
 	} else {
-		queryString = q.query.queryFull
+		querySql.WriteString(q.query.queryFull)
 	}
 
-	return queryString
-}
-
-/*
-getSintaxisFilter genera la sintaxis SQL adecuada para filtros aplicados en cláusulas WHERE
-y gestiona los argumentos necesarios para operadores como IN, NOT IN, BETWEEN y NOT BETWEEN.
-
-Esta función se encarga de construir la representación textual correcta del filtro en función del operador proporcionado,
-y añade los argumentos correspondientes a la lista de parámetros de la consulta.
-
-Parámetros:
-  - op: Operador de filtro (OperatorWhere) que se aplicará (por ejemplo, "=", "IN", "BETWEEN", etc.).
-  - arg: Valor o conjunto de valores utilizados en el filtro. Puede ser un valor único o un slice (por ejemplo, []interface{}).
-
-Devuelve:
-  - Una cadena (`string`) que representa la sintaxis adecuada para el filtro SQL.
-  - Un error (`error`) si ocurre alguno durante la generación de la sintaxis o el manejo de los argumentos.
-*/
-func (q *Query) getSintaxisFilter(op OperatorWhere, arg interface{}) (string, error) {
-	var argString string
-
-	if op == IN || op == NOT_IN {
-		if reflect.TypeOf(arg).String() != "[]interface {}" {
-			return "", errors.New("tipo de dato incorrecto para filtrado IN")
-		}
-		if len(arg.([]interface{})) <= 0 {
-			return "", errors.New("valor vació para filtrado IN")
-		}
-		arrayArgsSql := make([]string, 0)
-		for _, v := range arg.([]interface{}) {
-			arrayArgsSql = append(arrayArgsSql, fmt.Sprintf("$%d", q.argsLen))
-			q.args = append(q.args, v)
-			q.argsLen++
-		}
-		argString = fmt.Sprintf("(%s)", strings.Join(arrayArgsSql, ","))
-	} else if op == BETWEEN || op == NOT_BETWEEN {
-		if reflect.TypeOf(arg).String() != "[]interface {}" {
-			return "", errors.New("tipo de dato incorrecto para filtrado BETWEEN")
-		}
-		if len(arg.([]interface{})) < 2 {
-			return "", errors.New("valor vació o bien valores incompletos para filtrado BETWEEN")
-		}
-		argString = fmt.Sprintf("$%d AND ", q.argsLen)
-		q.args = append(q.args, arg.([]interface{})[0])
-		q.argsLen++
-		argString += fmt.Sprintf("$%d", q.argsLen)
-		q.args = append(q.args, arg.([]interface{})[1])
-		q.argsLen++
-	} else {
-		argString = fmt.Sprintf("$%d", q.argsLen)
-		q.args = append(q.args, arg)
-		q.argsLen++
-	}
-
-	return argString, nil
+	return querySql.String()
 }
 
 /*
@@ -928,11 +812,11 @@ Devuelve:
   - Una cadena (`string`) que representa la consulta SQL construida mediante los métodos del struct Query.
 */
 func (q *Query) String() string {
-	return q.getQuery()
+	return q.build()
 }
 
 /*
-GetErrors devuelve el error almacenado durante la construcción o ejecución de la consulta SQL.
+Errors devuelve el error almacenado durante la construcción o ejecución de la consulta SQL.
 
 Esta función permite recuperar el error que se haya producido en alguna etapa del proceso de construcción,
 ejecución o procesamiento de la consulta SQL. Es útil para el manejo de errores encadenado, ya que muchas funciones
@@ -942,14 +826,14 @@ Ejemplo de uso:
 
 	queryBuilder :=  new(pgorm.Query).New(pgorm.QConfig{Database: "my_database"})
 	queryBuilder.SetTable("my_table").Select("campo1").Where("campo2", "=", valor).Exec()
-	if err := queryBuilder.GetErrors(); err != nil {
+	if err := queryBuilder.Errors(); err != nil {
 	    log.Println("Ocurrió un error:", err)
 	}
 
 Devuelve:
   - El error almacenado, si existe; de lo contrario, devuelve `nil`.
 */
-func (q *Query) GetErrors() error {
+func (q *Query) Errors() error {
 	return q.err
 }
 
@@ -977,7 +861,7 @@ func (q *Query) Close() {
 }
 
 /*
-ResetQuery reinicia la configuración de la consulta SQL en el struct Query.
+Reset reinicia la configuración de la consulta SQL en el struct Query.
 
 Esta función limpia todos los componentes relacionados con la construcción de la consulta SQL,
 como las cláusulas SELECT, WHERE, JOIN, etc., así como los argumentos asociados.
@@ -987,15 +871,13 @@ Ejemplo de uso:
 
 	queryBuilder := new(pgorm.Query).New(pgorm.QConfig{Database: "my_database"})
 	queryBuilder.SetTable("my_table").Select("campo1").Where("campo2", "=", valor).Exec()
-	queryBuilder.ResetQuery() // Limpia la consulta actual
+	queryBuilder.Reset() // Limpia la consulta actual
 	queryBuilder.SetTable("my_table").Select("otro_campo").Where("otro_campo", "=", nuevoValor).Exec()
 
 No devuelve ningún valor.
 */
-func (q *Query) ResetQuery() {
+func (q *Query) Reset() {
 	q.query = sintaxis{}
-	q.argsLen = 0
-	q.args = []interface{}{}
 }
 
 // normalizeRow convierte UUIDs (OID 2950) a string

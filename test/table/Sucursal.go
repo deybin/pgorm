@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/deybin/pgorm"
+	"github.com/deybin/pgorm/schema"
 )
 
 type Schema_Sucursal struct {
@@ -24,19 +24,19 @@ func (s *Schema_Sucursal) New() *Schema_Sucursal {
 	return s
 }
 
-func (s *Schema_Sucursal) GetTableName() string {
+func (s *Schema_Sucursal) Name() string {
 	t := reflect.TypeOf(s.table)
 	return strings.ToLower(t.Name())
 }
 
-func (s *Schema_Sucursal) GetSchemaInsert() []pgorm.Fields {
-	return pgorm.SchemaExe{}.GenerateSchema(s.table, pgorm.ActionInsert)
+func (s *Schema_Sucursal) GetSchemaInsert() []schema.Fields {
+	return schema.SchemaExe{}.GenerateSchema(s.table, schema.ActionInsert)
 }
 
-func (s *Schema_Sucursal) GetSchemaUpdate() []pgorm.Fields {
-	return pgorm.SchemaExe{}.GenerateSchema(s.table, pgorm.ActionUpdate)
+func (s *Schema_Sucursal) GetSchemaUpdate() []schema.Fields {
+	return schema.SchemaExe{}.GenerateSchema(s.table, schema.ActionUpdate)
 }
 
-func (s *Schema_Sucursal) GetSchemaDelete() []pgorm.Fields {
-	return pgorm.SchemaExe{}.GenerateSchema(s.table, pgorm.ActionDelete)
+func (s *Schema_Sucursal) GetSchemaDelete() []schema.Fields {
+	return schema.SchemaExe{}.GenerateSchema(s.table, schema.ActionDelete)
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deybin/pgorm/internal"
+	"github.com/deybin/pgorm/schema"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -16,7 +18,7 @@ type SqlExecSingle struct {
 	ob     []map[string]interface{} //datos para observación
 	data   []map[string]interface{} //datos para insertar o actualizar o eliminar
 	query  []map[string]interface{}
-	schema Schema
+	schema schema.Schema
 	action string
 }
 
@@ -30,7 +32,7 @@ type Transaction struct {
 	ob     []map[string]interface{} //datos para observación
 	data   []map[string]interface{} //datos para insertar o actualizar o eliminar
 	query  []map[string]interface{}
-	schema Schema
+	schema schema.Schema
 	action string
 }
 
@@ -44,7 +46,7 @@ New crea una nueva instancia de SqlExecSingle con el esquema y los datos proporc
 	Return
 		- (*SqlExecSingle) retorna  puntero *SqlExecSingle struct
 */
-func (sq *SqlExecSingle) New(s Schema, datos ...map[string]interface{}) *SqlExecSingle {
+func (sq *SqlExecSingle) New(s schema.Schema, datos ...map[string]interface{}) *SqlExecSingle {
 	sq.ob = datos
 	sq.schema = s
 	return sq
@@ -57,7 +59,7 @@ Valida los datos para insertar y crea el query para insertar
 		- (error): retorna errores ocurridos en la validación
 */
 func (sq *SqlExecSingle) Insert() error {
-	sqlExec, data_insert, err := _insert(sq.schema.GetTableName(), sq.ob, sq.schema.GetSchemaInsert())
+	sqlExec, data_insert, err := _insert(sq.schema.Name(), sq.ob, sq.schema.GetSchemaInsert())
 	if err != nil {
 		return err
 	}
@@ -74,7 +76,7 @@ Valida los datos para actualizar y crea el query para actualizar
 		- (error): retorna errores ocurridos en la validación
 */
 func (sq *SqlExecSingle) Update() error {
-	sqlExec, data_update, err := _update(sq.schema.GetTableName(), sq.ob, sq.schema.GetSchemaUpdate())
+	sqlExec, data_update, err := _update(sq.schema.Name(), sq.ob, sq.schema.GetSchemaUpdate())
 	if err != nil {
 		return err
 	}
@@ -91,7 +93,7 @@ Valida los datos para Eliminar y crea el query para Eliminar
 		- (error): retorna errores ocurridos en la validación
 */
 func (sq *SqlExecSingle) Delete() error {
-	sqlExec, data_delete, err := _delete(sq.schema.GetTableName(), sq.ob, sq.schema.GetSchemaDelete())
+	sqlExec, data_delete, err := _delete(sq.schema.Name(), sq.ob, sq.schema.GetSchemaDelete())
 	if err != nil {
 		return err
 	}
@@ -118,7 +120,7 @@ Ejecuta el query
 		- returns {error}: retorna errores ocurridos durante la ejecución
 */
 func (sq *SqlExecSingle) Exec(database string, params ...bool) error {
-	cnn, err := new(Connection).New(database).Pool()
+	cnn, err := new(internal.Connection).New(database).NewPool()
 	if err != nil {
 		return err
 	}
@@ -141,7 +143,7 @@ func (sq *SqlExecSingle) Exec(database string, params ...bool) error {
 		// fmt.Println("PREPARED: ", sqlPre)
 		valuesExec := item["valuesExec"].([]interface{})
 
-		if _, err_exec := cnn.pool.Exec(cnn.context, sqlPre, valuesExec...); err_exec != nil {
+		if _, err_exec := cnn.Pool().Exec(cnn.Context(), sqlPre, valuesExec...); err_exec != nil {
 			return fmt.Errorf("error sql %s: %s", sq.action, err_exec.Error())
 		}
 	}
@@ -173,7 +175,7 @@ SetInfo establece la información para una nueva transacción en SqlExecMultiple
 	Return
 		- (*Transaction) retorna puntero *Transaction
 */
-func (sq *SqlExecMultiple) SetInfo(s Schema, datos ...map[string]interface{}) *Transaction {
+func (sq *SqlExecMultiple) SetInfo(s schema.Schema, datos ...map[string]interface{}) *Transaction {
 	key := len(sq.transaction)
 	sq.transaction = append(sq.transaction, &Transaction{
 		ob:     datos,
@@ -236,7 +238,7 @@ SetSqlSingle establece la información de un SqlExecSingle para crear una nueva 
 func (sq *SqlExecMultiple) SetSqlSingle(s SqlExecSingle) (*Transaction, error) {
 	key := len(sq.transaction)
 	if s.action == "" {
-		return nil, errors.New("datos de " + s.schema.GetTableName() + " aun no han sido procesados")
+		return nil, errors.New("datos de " + s.schema.Name() + " aun no han sido procesados")
 	}
 	sq.transaction = append(sq.transaction, &Transaction{
 		ob:     s.ob,
@@ -256,7 +258,7 @@ Ejecuta el query
 		- (error): retorna errores ocurridos durante la ejecución
 */
 func (sq *SqlExecMultiple) Exec(params ...bool) error {
-	cnn, err := new(Connection).New(sq.database).Pool()
+	cnn, err := new(internal.Connection).New(sq.database).NewPool()
 	if err != nil {
 		return err
 	}
@@ -266,7 +268,7 @@ func (sq *SqlExecMultiple) Exec(params ...bool) error {
 	defer cancel()
 
 	// Adquirir conexión del pool
-	conn, err := cnn.pool.Acquire(ctx)
+	conn, err := cnn.Pool().Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("error acquire pool: %w", err)
 	}
@@ -315,7 +317,7 @@ func (sq *SqlExecMultiple) Exec(params ...bool) error {
 }
 
 func (t *Transaction) Insert() error {
-	sqlExec, data_insert, err := _insert(t.schema.GetTableName(), t.ob, t.schema.GetSchemaInsert())
+	sqlExec, data_insert, err := _insert(t.schema.Name(), t.ob, t.schema.GetSchemaInsert())
 	if err != nil {
 		return err
 	}
@@ -326,7 +328,7 @@ func (t *Transaction) Insert() error {
 }
 
 func (t *Transaction) Update() error {
-	sqlExec, data_update, err := _update(t.schema.GetTableName(), t.ob, t.schema.GetSchemaUpdate())
+	sqlExec, data_update, err := _update(t.schema.Name(), t.ob, t.schema.GetSchemaUpdate())
 	if err != nil {
 		return err
 	}
@@ -337,7 +339,7 @@ func (t *Transaction) Update() error {
 }
 
 func (t *Transaction) Delete() error {
-	sqlExec, data_delete, err := _delete(t.schema.GetTableName(), t.ob, t.schema.GetSchemaDelete())
+	sqlExec, data_delete, err := _delete(t.schema.Name(), t.ob, t.schema.GetSchemaDelete())
 	if err != nil {
 		return err
 	}
@@ -357,14 +359,14 @@ func (sq *SqlExecMultiple) ExecTransaction(t *Transaction) error {
 
 	if sq.tx == nil {
 		// Crear conexión
-		cnn, err := new(Connection).New(sq.database).Pool()
+		cnn, err := new(internal.Connection).New(sq.database).NewPool()
 		if err != nil {
 			return err
 		}
 		defer cnn.Close()
 
 		// Adquirir conexión del pool
-		conn, err := cnn.pool.Acquire(ctx)
+		conn, err := cnn.Pool().Acquire(ctx)
 		if err != nil {
 			return fmt.Errorf("error acquire pool: %w", err)
 		}
@@ -411,7 +413,7 @@ func (sq *SqlExecMultiple) Commit() error {
 	return nil
 }
 
-func _insert(table string, data []map[string]interface{}, schema []Fields) ([]map[string]interface{}, []map[string]interface{}, error) {
+func _insert(table string, data []map[string]interface{}, schema []schema.Fields) ([]map[string]interface{}, []map[string]interface{}, error) {
 	length := len(data)
 	if length > 0 {
 		var sqlExec = make([]map[string]interface{}, 0)
@@ -448,7 +450,7 @@ func _insert(table string, data []map[string]interface{}, schema []Fields) ([]ma
 	}
 }
 
-func _update(table string, data []map[string]interface{}, schema []Fields) ([]map[string]interface{}, []map[string]interface{}, error) {
+func _update(table string, data []map[string]interface{}, schema []schema.Fields) ([]map[string]interface{}, []map[string]interface{}, error) {
 	length := len(data)
 
 	if length > 0 {
@@ -523,7 +525,7 @@ func _update(table string, data []map[string]interface{}, schema []Fields) ([]ma
 	}
 }
 
-func _delete(table string, data []map[string]interface{}, schema []Fields) ([]map[string]interface{}, []map[string]interface{}, error) {
+func _delete(table string, data []map[string]interface{}, schema []schema.Fields) ([]map[string]interface{}, []map[string]interface{}, error) {
 	length := len(data)
 
 	if length > 0 {
@@ -571,7 +573,7 @@ func _delete(table string, data []map[string]interface{}, schema []Fields) ([]ma
 	}
 }
 
-func _checkInsertSchema(schema []Fields, tabla_map map[string]interface{}) (map[string]interface{}, error) {
+func _checkInsertSchema(schema []schema.Fields, tabla_map map[string]interface{}) (map[string]interface{}, error) {
 
 	// var err_cont uint64 = 0
 	var err_cont uint
@@ -582,6 +584,13 @@ func _checkInsertSchema(schema []Fields, tabla_map map[string]interface{}) (map[
 	for _, item := range schema {
 		isNil := tabla_map[item.Name] == nil
 		defaultIsNil := item.Default == nil
+
+		if item.Type == "string" {
+			if strings.TrimSpace(fmt.Sprintf("%s", tabla_map[item.Name])) == "" {
+				isNil = true
+			}
+		}
+
 		if !isNil {
 			value := tabla_map[item.Name]
 			new_value, err := strconvDataType(string(item.Type), value)
@@ -616,11 +625,11 @@ func _checkInsertSchema(schema []Fields, tabla_map map[string]interface{}) (map[
 	}
 }
 
-func _checkUpdate(schema []Fields, tabla_map map[string]interface{}) (map[string]interface{}, error) {
+func _checkUpdate(schemas []schema.Fields, tabla_map map[string]interface{}) (map[string]interface{}, error) {
 	var err_cont uint
 	var error string
 	data := make(map[string]interface{})
-	for _, item := range schema {
+	for _, item := range schemas {
 		isNil := tabla_map[item.Name] == nil
 		if !isNil {
 			if item.Update {
@@ -646,13 +655,13 @@ func _checkUpdate(schema []Fields, tabla_map map[string]interface{}) (map[string
 					keyName := item.Name
 
 					switch item.ArithmeticOperations {
-					case Sum:
+					case schema.Sum:
 						keyName = fmt.Sprintf("ADD_%s_SUMA", item.Name)
-					case Subtraction:
+					case schema.Subtraction:
 						keyName = fmt.Sprintf("ADD_%s_SUBTRACTION", item.Name)
-					case Multiply:
+					case schema.Multiply:
 						keyName = fmt.Sprintf("ADD_%s_MULTIPLY", item.Name)
-					case Divide:
+					case schema.Divide:
 						keyName = fmt.Sprintf("ADD_%s_DIVIDE", item.Name)
 					}
 
@@ -674,7 +683,7 @@ func _checkUpdate(schema []Fields, tabla_map map[string]interface{}) (map[string
 	}
 }
 
-func _checkWhere(schema []Fields, table_where map[string]interface{}) (map[string]interface{}, error) {
+func _checkWhere(schema []schema.Fields, table_where map[string]interface{}) (map[string]interface{}, error) {
 	var err_cont uint
 	var error string
 	data := make(map[string]interface{})
@@ -708,7 +717,7 @@ func _checkWhere(schema []Fields, table_where map[string]interface{}) (map[strin
 	}
 }
 
-func caseString(value string, schema TypeStrings) (string, error) {
+func caseString(value string, schema schema.TypeStrings) (string, error) {
 	value = strings.TrimSpace(value)
 	if schema.Expr != nil {
 		if !schema.Expr.MatchString(value) {
@@ -748,11 +757,11 @@ func caseString(value string, schema TypeStrings) (string, error) {
 	return value, nil
 }
 
-func caseDate(value time.Time, _ TypeDate) (time.Time, error) {
+func caseDate(value time.Time, _ schema.TypeDate) (time.Time, error) {
 	return value, nil
 }
 
-func caseFloat(value float64, schema TypeFloat64) (float64, error) {
+func caseFloat(value float64, schema schema.TypeFloat64) (float64, error) {
 	error := ""
 	err_cont := 0
 	if schema.Menor != 0 {
@@ -783,7 +792,7 @@ func caseFloat(value float64, schema TypeFloat64) (float64, error) {
 	}
 }
 
-func caseInt(value int64, schema TypeInt64) (int64, error) {
+func caseInt(value int64, schema schema.TypeInt64) (int64, error) {
 	error := ""
 	err_cont := 0
 	if !schema.Negativo {
@@ -811,7 +820,7 @@ func caseInt(value int64, schema TypeInt64) (int64, error) {
 	}
 }
 
-func caseUint(value uint64, schema TypeUint64) (uint64, error) {
+func caseUint(value uint64, schema schema.TypeUint64) (uint64, error) {
 	if schema.Max > 0 {
 		if value > schema.Max {
 			return 0, errors.New("- no esta en el rango permitido")
@@ -896,20 +905,20 @@ func strconvDataType(targetType string, value interface{}) (interface{}, error) 
 	}
 }
 
-func validaciones(item Fields, new_value interface{}) (interface{}, error) {
+func validaciones(item schema.Fields, new_value interface{}) (interface{}, error) {
 	var val interface{}
 	var err error
 	switch item.Type {
 	case "string":
-		val, err = caseString(new_value.(string), item.ValidateType.(TypeStrings))
+		val, err = caseString(new_value.(string), item.ValidateType.(schema.TypeStrings))
 	case "float64":
-		val, err = caseFloat(new_value.(float64), item.ValidateType.(TypeFloat64))
+		val, err = caseFloat(new_value.(float64), item.ValidateType.(schema.TypeFloat64))
 	case "uint64":
-		val, err = caseUint(new_value.(uint64), item.ValidateType.(TypeUint64))
+		val, err = caseUint(new_value.(uint64), item.ValidateType.(schema.TypeUint64))
 	case "int64":
-		val, err = caseInt(new_value.(int64), item.ValidateType.(TypeInt64))
+		val, err = caseInt(new_value.(int64), item.ValidateType.(schema.TypeInt64))
 	case "time.Time":
-		val, err = caseDate(new_value.(time.Time), item.ValidateType.(TypeDate))
+		val, err = caseDate(new_value.(time.Time), item.ValidateType.(schema.TypeDate))
 	default:
 		val, err = nil, errors.New("tipo de dato no asignado")
 	}

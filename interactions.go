@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+
+	"github.com/deybin/pgorm/schema"
 )
 
 func Query_Cross_Update(query string) string {
@@ -49,8 +51,8 @@ func InterfaceToString(params ...interface{}) string {
 	return valueReturn
 }
 
-func SchemaForUpdate(modelo []Fields) []Fields {
-	var newModels []Fields
+func SchemaForUpdate(modelo []schema.Fields) []schema.Fields {
+	var newModels []schema.Fields
 	for _, v := range modelo {
 		if v.PrimaryKey {
 			newModels = append(newModels, v)
@@ -64,8 +66,8 @@ func SchemaForUpdate(modelo []Fields) []Fields {
 	return newModels
 }
 
-func SchemaForDelete(modelo []Fields) []Fields {
-	var newModels []Fields
+func SchemaForDelete(modelo []schema.Fields) []schema.Fields {
+	var newModels []schema.Fields
 	for _, v := range modelo {
 		if v.PrimaryKey {
 			newModels = append(newModels, v)

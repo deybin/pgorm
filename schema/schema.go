@@ -1,4 +1,4 @@
-package pgorm
+package schema
 
 import (
 	"context"
@@ -10,12 +10,20 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
+
+	"github.com/deybin/pgorm/internal"
 )
+
+type Models interface {
+	Name() string
+}
 
 // Schema es una interfaz que define métodos para obtener información sobre el esquema de una tabla en una base de datos.
 type Schema interface {
-	GetTableName() string
+	Name() string
+	// Alias() string
 	GetSchemaInsert() []Fields
 	GetSchemaUpdate() []Fields
 	GetSchemaDelete() []Fields
@@ -51,6 +59,7 @@ Las etiquetas de structure o también llamado etiquetas de campo estos metadatos
 */
 type Fields struct {
 	Name                 string   //Nombre del campo
+	NameOriginal         string   //Nombre del campo original
 	Description          string   //Descripción del campo
 	Type                 DataType //A bajo nivel es un string donde se especifica de que tipo sera el campo
 	ArithmeticOperations ArithmeticOperations
@@ -94,6 +103,18 @@ type TypeInt64 struct {
 	Negativo bool  // Rl campo aceptara valores negativos
 }
 
+type Where struct {
+	Clause    string
+	Condition string
+	Field     string
+	Value     any
+}
+
+type ModelsFilter[T any] struct {
+	Data       T
+	Conditions []Where
+}
+
 type Regex interface {
 	Letras(start int8, end int16) *regexp.Regexp
 	Float() *regexp.Regexp
@@ -127,10 +148,11 @@ func (s SchemaExe) GenerateSchema(data any, action ActionType) []Fields {
 
 		var structSchema Fields
 		structSchema.Name = strings.ToLower(field.Name)
+		structSchema.NameOriginal = field.Name
 		structSchema.Description = field.Tag.Get("tag")
 
 		if structSchema.Name == "atcreate" {
-			structSchema.Default = Date{}.GetDateLocation()
+			structSchema.Default = s.getDateLocation()
 		}
 
 		validateTag := field.Tag.Get("validate")
@@ -168,45 +190,47 @@ func (s SchemaExe) GenerateSchema(data any, action ActionType) []Fields {
 			structSchema.Default = value.Interface()
 		}
 		validateTypeTag := field.Tag.Get("validateType")
-		rules := strings.Split(validateTypeTag, ",")
+		rules := strings.Split(validateTypeTag, ";")
 		switch structSchema.Type {
 		case String:
 			schemaType := TypeStrings{}
 			for _, rule := range rules {
-				if strings.HasPrefix(rule, "min=") {
-					min, _ := strconv.Atoi(strings.TrimPrefix(rule, "min="))
+				if after, ok := strings.CutPrefix(rule, "min="); ok {
+					min, _ := strconv.Atoi(after)
 					schemaType.Min = min
-				} else if strings.HasPrefix(rule, "max=") {
-					max, _ := strconv.Atoi(strings.TrimPrefix(rule, "max="))
+				}
+				if after, ok := strings.CutPrefix(rule, "max="); ok {
+					max, _ := strconv.Atoi(after)
 					schemaType.Max = max
-				} else if strings.HasPrefix(rule, "case=") {
-					typeCase := strings.TrimPrefix(rule, "case=")
-					switch typeCase {
+				}
+				if after, ok := strings.CutPrefix(rule, "case="); ok {
+					switch after {
 					case "lowercase":
 						schemaType.LowerCase = true
 					case "uppercase":
 						schemaType.UpperCase = true
 					}
-				} else if strings.Contains(rule, "encrypt") {
+				}
+				if strings.Contains(rule, "encrypt") {
 					schemaType.Encriptar = true
-				} else if strings.Contains(rule, "cipher") {
+				}
+				if strings.Contains(rule, "cipher") {
 					schemaType.Cifrar = true
-				} else if strings.HasPrefix(rule, "expr=") {
-					typeCase := strings.TrimPrefix(rule, "expr=")
-					if typeCase == "number" {
-						schemaType.Expr = Number()
-					}
+				}
+				if after, ok := strings.CutPrefix(rule, "expr="); ok {
+					schemaType.Expr = regexp.MustCompile(after)
+
 				}
 			}
 			structSchema.ValidateType = schemaType
 		case Float:
 			schemaType := TypeFloat64{}
 			for _, rule := range rules {
-				if strings.HasPrefix(rule, "menor=") {
-					menor, _ := strconv.ParseFloat(strings.TrimPrefix(rule, "menor="), 64)
+				if after, ok := strings.CutPrefix(rule, "menor="); ok {
+					menor, _ := strconv.ParseFloat(after, 64)
 					schemaType.Menor = menor
-				} else if strings.HasPrefix(rule, "mayor=") {
-					mayor, _ := strconv.ParseFloat(strings.TrimPrefix(rule, "mayor="), 64)
+				} else if after0, ok0 := strings.CutPrefix(rule, "mayor="); ok0 {
+					mayor, _ := strconv.ParseFloat(after0, 64)
 					schemaType.Mayor = mayor
 				} else if strings.Contains(rule, "negative") {
 					schemaType.Negativo = true
@@ -218,11 +242,11 @@ func (s SchemaExe) GenerateSchema(data any, action ActionType) []Fields {
 		case Int:
 			schemaType := TypeInt64{}
 			for _, rule := range rules {
-				if strings.HasPrefix(rule, "min=") {
-					min, _ := strconv.Atoi(strings.TrimPrefix(rule, "min="))
+				if after, ok := strings.CutPrefix(rule, "min="); ok {
+					min, _ := strconv.Atoi(after)
 					schemaType.Min = int64(min)
-				} else if strings.HasPrefix(rule, "max=") {
-					max, _ := strconv.Atoi(strings.TrimPrefix(rule, "max="))
+				} else if after0, ok0 := strings.CutPrefix(rule, "max="); ok0 {
+					max, _ := strconv.Atoi(after0)
 					schemaType.Max = int64(max)
 				} else if strings.Contains(rule, "negativo") {
 					schemaType.Negativo = true
@@ -232,8 +256,8 @@ func (s SchemaExe) GenerateSchema(data any, action ActionType) []Fields {
 		case Uint:
 			schemaType := TypeUint64{}
 			for _, rule := range rules {
-				if strings.HasPrefix(rule, "max=") {
-					max, _ := strconv.Atoi(strings.TrimPrefix(rule, "max="))
+				if after, ok := strings.CutPrefix(rule, "max="); ok {
+					max, _ := strconv.Atoi(after)
 					schemaType.Max = uint64(max)
 				}
 			}
@@ -366,7 +390,7 @@ func toPascalCase(input string) string {
 }
 
 func consultar(query string, database string) []map[string]interface{} {
-	db, err := new(Connection).New(database).Pool()
+	db, err := new(internal.Connection).New(database).NewPool()
 	ctx := context.Background()
 
 	if err != nil {
@@ -374,7 +398,7 @@ func consultar(query string, database string) []map[string]interface{} {
 	}
 	// fmt.Println("Query: ", errPool)
 
-	rows, err := db.pool.Query(ctx, query)
+	rows, err := db.Pool().Query(ctx, query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -432,3 +456,8 @@ type tableModel struct {
 	Credits         int64     `json:"credits" field:"credits" tag:"Créditos" validate:"required" validateType:"negativo,min=40, max=5"`
 }
 */
+
+func (d SchemaExe) getDateLocation() time.Time {
+	loc, _ := time.LoadLocation("America/Bogota")
+	return time.Now().In(loc)
+}

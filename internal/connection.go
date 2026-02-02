@@ -1,10 +1,11 @@
-package pgorm
+package internal
 
 import (
 	"context"
 	"fmt"
 	"os"
 
+	"github.com/deybin/pgorm/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
@@ -69,19 +70,19 @@ func (c *Connection) newPool(isMaster bool) (*Connection, error) {
 
 	cnn, err := pgxpool.New(c.context, host)
 	if err != nil {
-		return nil, fmt.Errorf("conexión error: %w", ManagerErrors{}.SqlConnections(err))
+		return nil, fmt.Errorf("conexión error: %w", logger.ManagerErrors{}.SqlConnections(err))
 	}
 
 	// Forzar conexión real para detectar errores, porque pool no realiza la conexión hasta realizar la primera consulta
 	if err := cnn.Ping(c.context); err != nil {
-		return nil, fmt.Errorf("conexión error: %w", ManagerErrors{}.SqlConnections(err))
+		return nil, fmt.Errorf("conexión error: %w", logger.ManagerErrors{}.SqlConnections(err))
 	}
 
 	c.pool = cnn
 	return c, nil
 }
 
-func (c *Connection) Pool() (*Connection, error) {
+func (c *Connection) NewPool() (*Connection, error) {
 	return c.newPool(false)
 }
 
@@ -89,11 +90,11 @@ func (c *Connection) PoolMaster() (*Connection, error) {
 	return c.newPool(true)
 }
 
-func (c *Connection) GetPool() *pgxpool.Pool {
+func (c *Connection) Pool() *pgxpool.Pool {
 	return c.pool
 }
 
-func (c *Connection) GetContext() context.Context {
+func (c *Connection) Context() context.Context {
 	return c.context
 }
 

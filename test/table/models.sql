@@ -8,12 +8,12 @@ create table
 		age int DEFAULT 0 NOT NULL,
 		amount float8 DEFAULT 0.0 NOT NULL,
 		credits int DEFAULT 0 NOT NULL,
+		email text DEFAULT '' NOT NULL,
 		passwords text DEFAULT '' NOT NULL,
 		key_secret text DEFAULT '' NOT NULL,
 		atCreate timestamp DEFAULT now ()
 	)
-
-	create table
+create table
 	models2 (
 		id uuid PRIMARY KEY NOT NULL,
 		document varchar(11) DEFAULT '' NOT NULL,
@@ -23,6 +23,7 @@ create table
 		age int DEFAULT 0 NOT NULL,
 		amount float8 DEFAULT 0.0 NOT NULL,
 		credits int DEFAULT 0 NOT NULL,
+		email text DEFAULT '' NOT NULL,
 		passwords text DEFAULT '' NOT NULL,
 		key_secret text DEFAULT '' NOT NULL,
 		atCreate timestamp DEFAULT now ()
