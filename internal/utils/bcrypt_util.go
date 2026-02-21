@@ -1,4 +1,4 @@
-package pgorm
+package utils
 
 import (
 	"bytes"
@@ -18,8 +18,8 @@ func PKCS7Padding(cipherText []byte, blockSize int) []byte {
 
 func PKCS7UnPadding(origData []byte) []byte {
 	length := len(origData)
-	unpadding := int(origData[length-1])
-	return origData[:(length - unpadding)]
+	unPadding := int(origData[length-1])
+	return origData[:(length - unPadding)]
 }
 
 func AesEncrypt(origData, key []byte) ([]byte, error) {
@@ -30,20 +30,20 @@ func AesEncrypt(origData, key []byte) ([]byte, error) {
 	blockSize := block.BlockSize()
 	origData = PKCS7Padding(origData, blockSize)
 	blockMode := cipher.NewCBCEncrypter(block, key[:blockSize])
-	crypted := make([]byte, len(origData))
-	blockMode.CryptBlocks(crypted, origData)
-	return crypted, nil
+	encrypted := make([]byte, len(origData))
+	blockMode.CryptBlocks(encrypted, origData)
+	return encrypted, nil
 }
 
-func AesDecrypt(crypted, key []byte) ([]byte, error) {
+func AesDecrypt(encrypted, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 	blockSize := block.BlockSize()
 	blockMode := cipher.NewCBCDecrypter(block, key[:blockSize])
-	origData := make([]byte, len(crypted))
-	blockMode.CryptBlocks(origData, crypted)
+	origData := make([]byte, len(encrypted))
+	blockMode.CryptBlocks(origData, encrypted)
 	origData = PKCS7UnPadding(origData)
 	return origData, nil
 }
@@ -60,53 +60,53 @@ func AesEncrypt_PHP(origData, key []byte) (string, error) {
 	}
 
 	// The IV needs to be unique, but not secure. Therefore it's common to
-	// include it at the beginning of the ciphertext.
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
+	// include it at the beginning of the cipherText.
+	cipherText := make([]byte, aes.BlockSize+len(plaintext))
+	iv := cipherText[:aes.BlockSize]
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return "", err
 	}
 
 	mode := cipher.NewCBCEncrypter(block, iv)
-	mode.CryptBlocks(ciphertext[aes.BlockSize:], plaintext)
+	mode.CryptBlocks(cipherText[aes.BlockSize:], plaintext)
 
-	// It's important to remember that ciphertexts must be authenticated
+	// It's important to remember that cipherTexts must be authenticated
 	// (i.e. by using crypto/hmac) as well as being encrypted in order to
 	// be secure.
 
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+	return base64.StdEncoding.EncodeToString(cipherText), nil
 }
 
 func AesDecrypt_PHP(crypted, key []byte) ([]byte, error) {
 
-	ciphertext, _ := base64.StdEncoding.DecodeString(string(crypted))
+	cipherText, _ := base64.StdEncoding.DecodeString(string(crypted))
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 
-	// include it at the beginning of the ciphertext.
-	if len(ciphertext) < aes.BlockSize {
-		return nil, errors.New("ciphertext too short")
+	// include it at the beginning of the cipherText.
+	if len(cipherText) < aes.BlockSize {
+		return nil, errors.New("cipherText too short")
 	}
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
+	iv := cipherText[:aes.BlockSize]
+	cipherText = cipherText[aes.BlockSize:]
 
 	// CBC mode always works in whole blocks.
-	if len(ciphertext)%aes.BlockSize != 0 {
-		return nil, errors.New("ciphertext is not a multiple of the block size")
+	if len(cipherText)%aes.BlockSize != 0 {
+		return nil, errors.New("cipherText is not a multiple of the block size")
 	}
 
 	mode := cipher.NewCBCDecrypter(block, iv)
 
 	// CryptBlocks can work in-place if the two arguments are the same.
-	mode.CryptBlocks(ciphertext, ciphertext)
-	ciphertext = PKCS7UnPadding(ciphertext)
-	return ciphertext, nil
+	mode.CryptBlocks(cipherText, cipherText)
+	cipherText = PKCS7UnPadding(cipherText)
+	return cipherText, nil
 }
 
 func PKCS5Padding(src []byte, blockSize int) []byte {
 	padding := blockSize - len(src)%blockSize
-	padtext := bytes.Repeat([]byte{byte(padding)}, padding)
-	return append(src, padtext...)
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(src, padText...)
 }

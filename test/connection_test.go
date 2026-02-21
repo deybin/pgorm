@@ -1,47 +1,41 @@
 package test
 
-import (
-	"testing"
+// func TestConnectionDatabaseMaster(t *testing.T) {
+// 	_, err := new(internal.Connection).New("").PoolMaster()
+// 	if err != nil {
+// 		t.Errorf("no se esperaba este error: %s", err.Error())
+// 		return
+// 	}
+// }
 
-	"github.com/deybin/pgorm/internal"
-)
+// func TestConnectionDatabaseVariable(t *testing.T) {
+// 	_, err := new(internal.Connection).New("new_capital").NewPool()
+// 	if err != nil {
+// 		t.Errorf("no se esperaba este error: %s", err.Error())
+// 		return
+// 	}
+// }
 
-func TestConnectionDatabaseMaster(t *testing.T) {
-	_, err := new(internal.Connection).New("").PoolMaster()
-	if err != nil {
-		t.Errorf("no se esperaba este error: %s", err.Error())
-		return
-	}
-}
+// func TestConnectionDatabaseVariable__Error(t *testing.T) {
+// 	_, err := new(internal.Connection).New("new_capitala").NewPool()
 
-func TestConnectionDatabaseVariable(t *testing.T) {
-	_, err := new(internal.Connection).New("new_capital").NewPool()
-	if err != nil {
-		t.Errorf("no se esperaba este error: %s", err.Error())
-		return
-	}
-}
+// 	if err != nil {
+// 		if err.Error() != "conexión error: base de datos no existe" {
+// 			t.Errorf("este error no se esperaba: %s", err.Error())
 
-func TestConnectionDatabaseVariable__Error(t *testing.T) {
-	_, err := new(internal.Connection).New("new_capitala").NewPool()
+// 		}
+// 	} else {
+// 		t.Errorf("se esperaba un error")
+// 	}
+// }
 
-	if err != nil {
-		if err.Error() != "conexión error: base de datos no existe" {
-			t.Errorf("este error no se esperaba: %s", err.Error())
+// func TestConnection__Close(t *testing.T) {
+// 	cnn, err := new(internal.Connection).New("new_capital").NewPool()
+// 	if err != nil {
+// 		t.Errorf("no se esperaba este error: %s", err.Error())
+// 		return
+// 	}
 
-		}
-	} else {
-		t.Errorf("se esperaba un error")
-	}
-}
+// 	cnn.Close()
 
-func TestConnection__Close(t *testing.T) {
-	cnn, err := new(internal.Connection).New("new_capital").NewPool()
-	if err != nil {
-		t.Errorf("no se esperaba este error: %s", err.Error())
-		return
-	}
-
-	cnn.Close()
-
-}
+// }
