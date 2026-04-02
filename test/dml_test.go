@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 // inserta,actualiza y elimina datos solo de una tabla
 func TestCRUD_IUD_Single(t *testing.T) {
 	db, err := adapters.NewPool(adapters.ConfigPgxAdapter{})
+	ctx := context.WithValue(context.Background(), pgorm.SchemaId, "public")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -34,14 +36,14 @@ func TestCRUD_IUD_Single(t *testing.T) {
 		Key_secret: "hola soy Deybin",
 	}
 
-	crudInsert := pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{}, dataInsert)
+	crudInsert := pgorm.NewSqlExecSingles(&tables.ModelsSchema{}, dataInsert)
 
 	if err := crudInsert.Insert(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
 
-	if err = pgorm.TransactionExec(crudInsert); err != nil {
+	if err = pgorm.ExecTransaction(db, ctx, crudInsert); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
@@ -56,14 +58,14 @@ func TestCRUD_IUD_Single(t *testing.T) {
 		},
 	}
 
-	crudUpdate := pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{}, dataUpdate)
+	crudUpdate := pgorm.NewSqlExecSingles(&tables.ModelsSchema{}, dataUpdate)
 
 	if err := crudUpdate.Update(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
 
-	if err := pgorm.TransactionExec(crudUpdate); err != nil {
+	if err := pgorm.ExecTransaction(db, ctx, crudUpdate); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
@@ -74,14 +76,14 @@ func TestCRUD_IUD_Single(t *testing.T) {
 		{Clause: "WHERE", Condition: "=", Field: "id", Value: "369d48ab-d881-4e22-9f14-8e9af67da9aa"},
 		{Clause: "OR", Condition: "=", Field: "document", Value: "719780401"},
 	}
-	crudDelete := pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{})
+	crudDelete := pgorm.NewSqlExecSingles(&tables.ModelsSchema{})
 
 	if err := crudDelete.Delete(dataDelete...); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
 
-	if err := pgorm.TransactionExec(crudDelete); err != nil {
+	if err := pgorm.ExecTransaction(db, ctx, crudDelete); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
@@ -124,16 +126,16 @@ func TestCRUD_IUD_MultipleSuccess(t *testing.T) {
 	}
 
 	// println(dataInsert.GetSchemaInsert())
-	crud := pgorm.NewSqlExecMultiples(db)
+	crud := pgorm.NewSqlExecMultiples()
 
-	table := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{}, dataInsert))
+	table := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema{}, dataInsert))
 
 	if err := table.Insert(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
 
-	table2 := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema2{}, dataInsert2))
+	table2 := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema2{}, dataInsert2))
 	if err := table2.Insert(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -147,7 +149,7 @@ func TestCRUD_IUD_MultipleSuccess(t *testing.T) {
 		},
 	}
 
-	table3 := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema2{}, dataUpdate2))
+	table3 := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema2{}, dataUpdate2))
 	if err := table3.Update(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -164,7 +166,7 @@ func TestCRUD_IUD_MultipleSuccess(t *testing.T) {
 		},
 	}
 
-	crudUpdate := pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{}, dataUpdate)
+	crudUpdate := pgorm.NewSqlExecSingles(&tables.ModelsSchema{}, dataUpdate)
 	if err := crudUpdate.Update(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -175,7 +177,7 @@ func TestCRUD_IUD_MultipleSuccess(t *testing.T) {
 		{Clause: "WHERE", Condition: "=", Field: "id", Value: "369d48ab-d881-4e22-9f14-8e9af67da9aa"},
 		{Clause: "OR", Condition: "=", Field: "document", Value: "719780401"},
 	}
-	table4 := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema2{}))
+	table4 := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema2{}))
 	if err := table4.Delete(dataDelete1...); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -185,7 +187,7 @@ func TestCRUD_IUD_MultipleSuccess(t *testing.T) {
 		{Clause: "WHERE", Condition: "=", Field: "id", Value: "369d48ab-d881-4e22-9f14-8e9af67da9aa"},
 		{Clause: "OR", Condition: "=", Field: "document", Value: "719780401"},
 	}
-	crudDelete := pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{})
+	crudDelete := pgorm.NewSqlExecSingles(&tables.ModelsSchema{})
 
 	if err := crudDelete.Delete(dataDelete...); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
@@ -194,7 +196,7 @@ func TestCRUD_IUD_MultipleSuccess(t *testing.T) {
 
 	crud.SetTransactions(crudDelete)
 
-	if err := pgorm.TransactionMultiExec(crud); err != nil {
+	if err := pgorm.ExecTransactionMulti(db, context.Background(), crud); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
@@ -237,16 +239,16 @@ func TestCRUD_IUD_MultipleError(t *testing.T) {
 		Key_secret: "hola soy Deybin",
 	}
 
-	crud := pgorm.NewSqlExecMultiples(db)
+	crud := pgorm.NewSqlExecMultiples()
 
-	table := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{}, dataInsert))
+	table := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema{}, dataInsert))
 
 	if err := table.Insert(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
 	}
 
-	table2 := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema2{}, dataInsert2))
+	table2 := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema2{}, dataInsert2))
 	if err := table2.Insert(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -260,7 +262,7 @@ func TestCRUD_IUD_MultipleError(t *testing.T) {
 		},
 	}
 
-	table3 := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema2{}, dataUpdate2))
+	table3 := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema2{}, dataUpdate2))
 	if err := table3.Update(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -277,7 +279,7 @@ func TestCRUD_IUD_MultipleError(t *testing.T) {
 		},
 	}
 
-	crudUpdate := pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{}, dataUpdate)
+	crudUpdate := pgorm.NewSqlExecSingles(&tables.ModelsSchema{}, dataUpdate)
 	if err := crudUpdate.Update(); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -288,7 +290,7 @@ func TestCRUD_IUD_MultipleError(t *testing.T) {
 		{Clause: "WHERE", Condition: "=", Field: "id", Value: "369d48ab-d881-4e22-9f14-8e9af67da9aa"},
 		{Clause: "OR", Condition: "=", Field: "document", Value: "719780401"},
 	}
-	table4 := crud.Set(pgorm.NewSqlExecSingles(db, &tables.ModelsSchema2{}))
+	table4 := crud.Set(pgorm.NewSqlExecSingles(&tables.ModelsSchema2{}))
 	if err := table4.Delete(dataDelete1...); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
 		return
@@ -298,7 +300,7 @@ func TestCRUD_IUD_MultipleError(t *testing.T) {
 		{Clause: "WHERE", Condition: "=", Field: "id", Value: "369d48ab-d881-4e22-9f14-8e9af67da9aa"},
 		{Clause: "OR", Condition: "=", Field: "document", Value: "719780401"},
 	}
-	crudDelete := pgorm.NewSqlExecSingles(db, &tables.ModelsSchema{})
+	crudDelete := pgorm.NewSqlExecSingles(&tables.ModelsSchema{})
 
 	if err := crudDelete.Delete(dataDelete...); err != nil {
 		t.Errorf("se esperaba este error: %s", err.Error())
@@ -306,7 +308,7 @@ func TestCRUD_IUD_MultipleError(t *testing.T) {
 	}
 
 	crud.SetTransactions(crudDelete)
-	if err := pgorm.TransactionMultiExec(crud); err != nil {
+	if err := pgorm.ExecTransactionMulti(db, context.Background(), crud); err != nil {
 		if err.Error() == "ERROR: value too long for type character varying(11) (SQLSTATE 22001)" {
 			fmt.Println("Error OK!!!: ", err.Error())
 			return

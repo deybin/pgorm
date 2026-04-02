@@ -20,7 +20,6 @@ import (
 
 type PgxAdapter struct {
 	db       *pgxpool.Pool
-	context  context.Context
 	database string
 	schema   string
 	server   string
@@ -44,6 +43,11 @@ type ConfigPgxAdapter struct {
 	MinConns        int32
 	MaxConnIdleTime time.Duration
 }
+
+type contextSchema string
+
+// Declaramos la constante con ese tipo
+const SchemaId contextSchema = "schemaId"
 
 func NewPool(setting ConfigPgxAdapter) (*PgxAdapter, error) {
 	_ = godotenv.Load()
@@ -150,7 +154,6 @@ func NewPool(setting ConfigPgxAdapter) (*PgxAdapter, error) {
 
 	return &PgxAdapter{
 		db:       pool,
-		context:  ctx,
 		database: database,
 		schema:   schema,
 		server:   host,
@@ -283,7 +286,6 @@ func NewPoolWithConfig(setting ConfigPgxAdapter) (*PgxAdapter, error) {
 
 	return &PgxAdapter{
 		db:       pool,
-		context:  ctx,
 		database: database,
 		schema:   schema,
 		server:   host,
@@ -300,19 +302,18 @@ func (c PgxAdapter) Pool() *pgxpool.Pool {
 	return c.db
 }
 
-func (c PgxAdapter) Context() context.Context {
-	return c.context
-}
-
 func (c *PgxAdapter) Close() {
 	c.db.Close()
 }
 
-func (p PgxAdapter) setSchema(ctx context.Context, conn *pgxpool.Conn, schema string) error {
-	if schema != "" {
-		if _, err := conn.Exec(ctx, "SET search_path TO "+schema); err != nil {
-			slog.Error("Fallo al acceder al schema", "error", err)
-			return err
+func (p PgxAdapter) setSchema(ctx context.Context, conn *pgxpool.Conn, schema any) error {
+
+	if schema != nil {
+		if schema.(string) != "" {
+			if _, err := conn.Exec(ctx, "SET search_path TO "+schema.(string)); err != nil {
+				slog.Error("Fallo al acceder al schema", "error", err)
+				return err
+			}
 		}
 	}
 	return nil
@@ -378,21 +379,23 @@ Devuelve:
   - Un puntero al struct Query actualizado, incluyendo los resultados o el error si ocurrió alguno.
 */
 
-func (p PgxAdapter) Execute(schema string, ctx context.Context, sql string, args ...any) ([]map[string]any, error) {
+func (p PgxAdapter) Execute(ctx context.Context, sql string, args ...any) ([]map[string]any, error) {
 	conn, err := p.db.Acquire(ctx)
 	if err != nil {
 		slog.Error("Fallo conexión db", "error", err)
 		return []map[string]any{}, err
 	}
-	defer conn.Release() // SEGURO: Siempre vuelve al pool al terminar la función
 
-	// 4. Configurar el esquema para ESTA sesión
-	if schema != "" {
-		_, err = conn.Exec(ctx, "SET search_path TO "+schema)
-		if err != nil {
-			slog.Error("Fallo al acceder al schema", "error", err)
-			return []map[string]any{}, err
-		}
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
+
+	schema := ctx.Value(SchemaId)
+
+	if err := p.setSchema(ctx, conn, schema.(string)); err != nil {
+		return []map[string]any{}, err
 	}
 
 	rows, err := conn.Query(ctx, sql, args...)
@@ -418,25 +421,66 @@ func (p PgxAdapter) Execute(schema string, ctx context.Context, sql string, args
 	return result, nil
 }
 
-func (p PgxAdapter) ExecuteWithPgxScan(schema string, ctx context.Context, dest any, sql string, args ...any) error {
+func (p PgxAdapter) ExecuteWithPgxScan(ctx context.Context, dest any, sql string, args ...any) error {
 	conn, err := p.db.Acquire(ctx)
 	if err != nil {
 		slog.Error("Fallo conexión db", "error", err)
 		return err
 	}
-	defer conn.Release() // SEGURO: Siempre vuelve al pool al terminar la función
+	defer func() {
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		conn.Release() // Devuelve al pool
+	}()
 
-	// 4. Configurar el esquema para ESTA sesión
-	if schema != "" {
-		_, err = conn.Exec(ctx, "SET search_path TO "+schema)
-		if err != nil {
-			slog.Error("Fallo al acceder al schema", "error", err)
-			return err
-		}
+	if err := p.setSchema(ctx, conn, ctx.Value(SchemaId)); err != nil {
+		return err
 	}
 
 	rows, err := conn.Query(ctx, sql, args...)
 	if err != nil {
+		slog.Error("Fallo al ejecutar", "error", err)
+		return err
+	}
+	defer rows.Close()
+
+	rv := reflect.ValueOf(dest)
+	// 1. Primero verificamos si es un puntero (porque dest siempre debe ser &variable)
+	if rv.Kind() == reflect.Ptr {
+		// 2. Obtenemos el elemento al que apunta el puntero
+		rv = rv.Elem()
+	}
+	if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+		return pgxscan.ScanAll(dest, rows)
+
+	}
+	// Para un solo elemento, evitamos ScanOne para que no explote si hay > 1
+	if rows.Next() {
+		return pgxscan.NewRowScanner(rows).Scan(dest)
+	}
+
+	return fmt.Errorf("not found information")
+}
+
+func (p PgxAdapter) ExecuteWithPgxScanAndSchema(schema string, ctx context.Context, dest any, sql string, args ...any) error {
+	conn, err := p.db.Acquire(ctx)
+	if err != nil {
+		slog.Error("Fallo conexión db", "error", err)
+		return err
+	}
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
+
+	if err := p.setSchema(ctx, conn, schema); err != nil {
+		return err
+	}
+
+	rows, err := conn.Query(ctx, sql, args...)
+	if err != nil {
+		slog.Error("Fallo al ejecutar", "error", err)
 		return err
 	}
 	defer rows.Close()
@@ -481,22 +525,46 @@ Retorna:
   - `nil` si la ejecución fue exitosa,
   - Un `error` si la ejecución falló o si ya existía un error previo en el estado del `Query`.
 */
-func (p *PgxAdapter) Procedure(schema string, ctx context.Context, sql string, arguments ...any) error {
+func (p *PgxAdapter) Procedure(ctx context.Context, sql string, arguments ...any) error {
 	conn, err := p.db.Acquire(ctx)
 	if err != nil {
 		slog.Error("Fallo conexión db", "error", err)
 		return err
 	}
-	defer conn.Release() // SEGURO: Siempre vuelve al pool al terminar la función
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
 
-	// 4. Configurar el esquema para ESTA sesión
-	if schema != "" {
-		_, err = conn.Exec(ctx, "SET search_path TO "+schema)
-		if err != nil {
-			slog.Error("Fallo al acceder al schema", "error", err)
-			return err
-		}
+	if err := p.setSchema(ctx, conn, ctx.Value(SchemaId)); err != nil {
+		return err
 	}
+
+	if _, err := conn.Exec(ctx, sql, arguments...); err != nil {
+		slog.Error("Fallo Exec", "error", err)
+		return err
+	}
+	return nil
+
+}
+
+func (p *PgxAdapter) ProcedureWithSchema(schema string, ctx context.Context, sql string, arguments ...any) error {
+	conn, err := p.db.Acquire(ctx)
+	if err != nil {
+		slog.Error("Fallo conexión db", "error", err)
+		return err
+	}
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
+
+	if err := p.setSchema(ctx, conn, schema); err != nil {
+		return err
+	}
+
 	if _, err := conn.Exec(ctx, sql, arguments...); err != nil {
 		slog.Error("Fallo Exec", "error", err)
 		return err
@@ -602,15 +670,37 @@ func (p PgxAdapter) normalizeRow(row map[string]interface{}, fieldDescs []pgconn
 	return row
 }
 
-func (p PgxAdapter) ExecuteTransactions(schema string, ctx context.Context, dataExec ...DataExec) error {
+func (p PgxAdapter) ExecuteTransactions(ctx context.Context, dataExec ...DataExec) error {
 	conn, err := p.db.Acquire(ctx)
 	if err != nil {
 		slog.Error("Fallo conexión db", "error", err)
 		return err
 	}
-	defer conn.Release() // SEGURO: Siempre vuelve al pool al terminar la función
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
 
-	// 4. Configurar el esquema para ESTA sesión
+	if err := p.setSchema(ctx, conn, ctx.Value(SchemaId)); err != nil {
+		return err
+	}
+
+	return p.executeInternal(ctx, conn, dataExec...)
+}
+
+func (p PgxAdapter) ExecuteTransactionsWithSchema(schema string, ctx context.Context, dataExec ...DataExec) error {
+	conn, err := p.db.Acquire(ctx)
+	if err != nil {
+		slog.Error("Fallo conexión db", "error", err)
+		return err
+	}
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
+
 	if err := p.setSchema(ctx, conn, schema); err != nil {
 		return err
 	}
@@ -618,14 +708,52 @@ func (p PgxAdapter) ExecuteTransactions(schema string, ctx context.Context, data
 	return p.executeInternal(ctx, conn, dataExec...)
 }
 
-func (p PgxAdapter) ExecuteTransactionsWithContext(schema string, ctx context.Context, dataExec ...[]DataExec) error {
+func (p PgxAdapter) ExecuteTransactionsMulti(ctx context.Context, dataExec ...[]DataExec) error {
 
 	conn, err := p.db.Acquire(ctx)
 	if err != nil {
 		slog.Error("Fallo conexión db", "error", err)
 		return err
 	}
-	defer conn.Release() // SEGURO: Siempre vuelve al pool al terminar la función
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
+
+	if err := p.setSchema(ctx, conn, ctx.Value(SchemaId)); err != nil {
+		return err
+	}
+	// Iniciar transacción
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+
+	// Ejecutar cada grupo de queries usando el motor interno
+	for _, group := range dataExec {
+		// Pasamos 'tx' como el ejecutor. Si falla, el motor devuelve error.
+		if err := p.executeInternal(ctx, tx, group...); err != nil {
+			tx.Rollback(ctx)
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (p PgxAdapter) ExecuteTransactionsMultiWithSchema(schema string, ctx context.Context, dataExec ...[]DataExec) error {
+
+	conn, err := p.db.Acquire(ctx)
+	if err != nil {
+		slog.Error("Fallo conexión db", "error", err)
+		return err
+	}
+	defer func() {
+		conn.Exec(ctx, "SET search_path TO DEFAULT")
+		// conn.Exec(ctx, "DISCARD ALL") // Limpia el estado
+		conn.Release() // Devuelve al pool
+	}()
 
 	// Configurar el esquema para ESTA sesión
 	if err := p.setSchema(ctx, conn, schema); err != nil {

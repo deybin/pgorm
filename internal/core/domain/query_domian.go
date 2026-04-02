@@ -14,7 +14,7 @@ type Sintaxis struct {
 	OrderBy_field       clause.OrderBy
 	GroupBy_field       clause.GroupBy
 	ArgsLen_field       int
-	Args_field          []interface{}
+	Args_field          []any
 	QueryFull_field     string /** guarda la consulta sql directa en string */
 	WorkQueryFull_field bool   /** establece si se va a utilizar una consulta directa mediante queryFull o mediante la estructura true:= se considerara queryFull false:= se considerara  estructura para formar la consulta sql*/
 }
@@ -123,8 +123,8 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Sintaxis) Where(where string, op clause.OperatorWhere, arg interface{}) *Sintaxis {
-	q.Where_field.Set(clause.ExpressionFilter{Name: q.Where_field.Name(), Column: where, Operators: op, Args: arg})
+func (q *Sintaxis) Where(where string, op clause.OperatorWhere, arg any) *Sintaxis {
+	q.Where_field.New(clause.ExpressionFilter{Name: clause.WHERE, Column: where, Operators: op, Args: arg})
 	return q
 }
 
@@ -149,8 +149,8 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Sintaxis) And(and string, op clause.OperatorWhere, arg interface{}) *Sintaxis {
-	q.Where_field.Set(clause.ExpressionFilter{Name: q.Where_field.And(), Column: and, Operators: op, Args: arg})
+func (q *Sintaxis) And(and string, op clause.OperatorWhere, arg any) *Sintaxis {
+	q.Where_field.Set(clause.ExpressionFilter{Name: clause.AND, Column: and, Operators: op, Args: arg})
 	return q
 }
 
@@ -175,8 +175,8 @@ Parámetros:
 Devuelve:
   - Un puntero al struct Query actualizado para permitir el encadenamiento de métodos.
 */
-func (q *Sintaxis) Or(or string, op clause.OperatorWhere, arg interface{}) *Sintaxis {
-	q.Where_field.Set(clause.ExpressionFilter{Name: q.Where_field.Or(), Column: or, Operators: op, Args: arg})
+func (q *Sintaxis) Or(or string, op clause.OperatorWhere, arg any) *Sintaxis {
+	q.Where_field.Set(clause.ExpressionFilter{Name: clause.OR, Column: or, Operators: op, Args: arg})
 	return q
 }
 
@@ -331,8 +331,17 @@ Ejemplo de uso:
 No devuelve ningún valor.
 */
 func (q *Sintaxis) Reset() {
-	q = &Sintaxis{}
+	q.From_field.Reset()
+	q.Select_field.Reset()
+	q.Where_field.Reset()
+	q.Join_field.Reset()
+	q.Limit_field.Reset()
+	q.OrderBy_field.Reset()
+	q.GroupBy_field.Reset()
+	q.Args_field = []any{}
+	q.QueryFull_field = ""
+	q.WorkQueryFull_field = false
 }
-func (q *Sintaxis) Arguments() []interface{} {
+func (q *Sintaxis) Arguments() []any {
 	return q.Args_field
 }

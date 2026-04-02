@@ -78,6 +78,8 @@ type TypeStrings struct {
 type TypeDate struct {
 }
 
+type TypeBoolean struct {
+}
 type TypeFloat64 struct {
 	Porcentaje bool    //Convierte el valor del campo en porcentaje
 	Negativo   bool    //El campo aceptara valores negativos

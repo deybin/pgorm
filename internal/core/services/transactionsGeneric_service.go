@@ -8,20 +8,15 @@ import (
 	"github.com/deybin/pgorm/internal/adapters"
 	"github.com/deybin/pgorm/internal/core/builder"
 	"github.com/deybin/pgorm/internal/core/domain"
-	"github.com/deybin/pgorm/internal/core/ports"
 	"github.com/deybin/pgorm/migrator"
 )
 
 type SqlExecSingles struct {
-	Db           ports.DBPort
-	Schemas      string
 	Transactions domain.Transactions
 	errors       []string
 }
 
 type SqlExecMultiples struct {
-	Db          ports.DBPort
-	Schemas     string
 	transaction []*SqlExecSingles
 }
 

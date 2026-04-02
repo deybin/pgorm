@@ -182,6 +182,8 @@ func validaciones(item Fields, value any) (any, error) {
 		val, err = caseInt(value.(int64), item.ValidateType.(TypeInt64))
 	case *time.Time:
 		val = value
+	case bool:
+		val = value
 	default:
 		val, err = nil, errors.New("tipo de dato no asignado")
 	}

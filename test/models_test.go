@@ -8,7 +8,19 @@ import (
 
 func TestModelsGenerateFile(t *testing.T) {
 
-	pgorm.NewEntitySchema("test", "models")
+	pgorm.NewEntitySchema("master", "subscriptions")
+
+	r := ""
+
+	result := []map[string]interface{}{}
+	if len(result) != 0 {
+		t.Errorf("Se esperaba: %v, pero se obtuvo %v", result, r)
+	}
+}
+
+func TestModelsGenerateFileWithSchema(t *testing.T) {
+
+	pgorm.NewEntitySchemaWithSchemaName("platcont", "base_users", "other")
 
 	r := ""
 

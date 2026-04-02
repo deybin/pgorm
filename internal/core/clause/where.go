@@ -8,6 +8,15 @@ import (
 	"strings"
 )
 
+type Clauses string
+
+const (
+	WHERE Clauses = "WHERE"
+	AND   Clauses = "AND"
+	OR    Clauses = "OR"
+	NOT   Clauses = "NOT"
+)
+
 /** operaciones utilizadas con la sentencia WHERE*/
 type OperatorWhere string
 
@@ -28,42 +37,28 @@ const (
 // Where where clause
 type Where struct {
 	Expressions  []ExpressionFilter
-	Arguments    []interface{}
+	Arguments    []any
 	ArgumentsLen int
 }
 
 type ExpressionFilter struct {
-	Name      string
+	Name      Clauses
 	Column    string
 	Operators OperatorWhere
-	Args      interface{}
-}
-
-// Name where clause name
-func (w Where) Name() string {
-	return "WHERE"
-}
-
-// Name where clause name
-func (w Where) And() string {
-	return "AND"
-}
-
-// Name where clause name
-func (w Where) Or() string {
-	return "OR"
-}
-
-// Name where clause name
-func (w Where) Not() string {
-	return "NOT"
+	Args      any
 }
 
 func (w *Where) Set(expression ExpressionFilter) {
 	w.Expressions = append(w.Expressions, expression)
 }
 
-func (w Where) FindArguments() []interface{} {
+func (w *Where) New(expression ExpressionFilter) {
+	w.Expressions = []ExpressionFilter{expression}
+	w.Arguments = []any{}
+	w.ArgumentsLen = 0
+}
+
+func (w Where) FindArguments() []any {
 	return w.Arguments
 }
 func (w Where) FindArgumentsLen() int {
@@ -71,8 +66,8 @@ func (w Where) FindArgumentsLen() int {
 }
 
 func (w *Where) Reset() {
-	w.Expressions = []ExpressionFilter{}
-	w.Arguments = []interface{}{}
+	w.Expressions = nil
+	w.Arguments = nil
 	w.ArgumentsLen = 0
 }
 
@@ -95,7 +90,7 @@ func (w *Where) buildExp(expr ExpressionFilter) (string, error) {
 	// var argString string
 	var SQL strings.Builder
 
-	SQL.WriteString(expr.Name)
+	SQL.WriteString(string(expr.Name))
 	SQL.WriteByte(' ')
 
 	switch expr.Operators {

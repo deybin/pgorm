@@ -8,11 +8,14 @@ import (
 )
 
 type DBPort interface {
-	Execute(schema string, ctx context.Context, sql string, args ...any) ([]map[string]any, error)
-	ExecuteWithPgxScan(schema string, ctx context.Context, dest any, sql string, args ...any) error
-	Procedure(schema string, ctx context.Context, sql string, args ...any) error
-	ExecuteTransactions(schema string, ctx context.Context, dataExec ...adapters.DataExec) error
-	ExecuteTransactionsWithContext(schema string, ctx context.Context, dataExec ...[]adapters.DataExec) error
-	Context() context.Context
+	Execute(ctx context.Context, sql string, args ...any) ([]map[string]any, error)
+	ExecuteWithPgxScan(ctx context.Context, dest any, sql string, args ...any) error
+	ExecuteWithPgxScanAndSchema(schema string, ctx context.Context, dest any, sql string, args ...any) error
+	Procedure(ctx context.Context, sql string, args ...any) error
+	ProcedureWithSchema(schema string, ctx context.Context, sql string, arguments ...any) error
+	ExecuteTransactions(ctx context.Context, dataExec ...adapters.DataExec) error
+	ExecuteTransactionsWithSchema(schema string, ctx context.Context, dataExec ...adapters.DataExec) error
+	ExecuteTransactionsMulti(ctx context.Context, dataExec ...[]adapters.DataExec) error
+	ExecuteTransactionsMultiWithSchema(schema string, ctx context.Context, dataExec ...[]adapters.DataExec) error
 	Pool() *pgxpool.Pool
 }

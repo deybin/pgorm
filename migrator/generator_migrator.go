@@ -13,123 +13,32 @@ import (
 	"github.com/deybin/pgorm/internal/adapters"
 )
 
+var dataTypeCollection = map[string]string{
+	"uuid":        "string",
+	"varchar":     "string",
+	"char":        "string",
+	"text":        "string",
+	"int4":        "uint64",
+	"float8":      "float64",
+	"numeric":     "float64",
+	"real":        "float64",
+	"bool":        "bool",
+	"date":        "*time.Time",
+	"timestamp":   "*time.Time",
+	"timestamptz": "*time.Time",
+}
+
 // Table
 // ParseInsert
 // ParseUpdate
 // ParseDelete
 
 func GenerateSchemaFile(database string, table string) {
-
-	dataTypeCollection := map[string]string{
-		"uuid":      "string",
-		"varchar":   "string",
-		"char":      "string",
-		"text":      "string",
-		"int4":      "uint64",
-		"float8":    "float64",
-		"real":      "float64",
-		"date":      "*time.Time",
-		"timestamp": "*time.Time",
-	}
-
-	basePath := "./tmp/"
-
-	resultTables := consultar("SELECT table_name FROM Information_Schema.TABLES WHERE table_name='"+table+"'", database)
-
-	for _, v := range resultTables {
-
-		tableName := toPascalCase(v["table_name"].(string))
-		temp_table_name := strings.Split(tableName, "_")
-		code_struct := "package tables\n"
-		table := temp_table_name[0]
-		nameSchema := "Schema" + table
-		backticks := "`"
-		code_struct += fmt.Sprintf(`
-			type %s struct {
-				table %s
-			}
-			`, nameSchema, tableName)
-
-		query_sql := fmt.Sprintf("SELECT * FROM Information_Schema.Columns where  TABLE_NAME='%s'", v["table_name"].(string))
-		resultColumns := consultar(query_sql, database)
-		// fmt.Println(resultColumns)
-		var codigo_schema string
-		fmt.Println("tabla:", tableName, "   columnas:", len(resultColumns))
-		var structTable []string
-		for _, column := range resultColumns {
-			var tagColumn string
-			tagColumn += toPascalCase(column["column_name"].(string))
-			tagColumn += fmt.Sprintf(` %s %s json:"%s" tag:"%s"  validate:"required"`, dataTypeCollection[column["udt_name"].(string)], backticks, column["column_name"], column["column_name"])
-
-			var validateType []string
-			if column["udt_name"] == "varchar" || column["udt_name"] == "char" || column["udt_name"] == "text" {
-				if column["udt_name"] != "text" {
-					max_length := int(column["character_maximum_length"].(int32))
-					if max_length != 36 {
-						if column["udt_name"] == "char" {
-							validateType = append(validateType, fmt.Sprintf(`min=%d`, max_length))
-						} else {
-							validateType = append(validateType, fmt.Sprintf(`min=%d`, int(math.Round(float64(max_length)*0.1))))
-						}
-						validateType = append(validateType, fmt.Sprintf(`max=%d`, max_length))
-					}
-				}
-				validateType = append(validateType, "case=lowercase")
-			} else if column["data_type"] == "integer" {
-				validateType = append(validateType, "max=10")
-			} else if column["udt_name"] == "float8" || column["udt_name"] == "real" {
-			} else if column["data_type"] == "date" {
-			}
-
-			tagColumn += fmt.Sprintf(` validateType:"%s" %s`, strings.Join(validateType, ","), backticks)
-			structTable = append(structTable, tagColumn)
-
-		}
-		// fmt.Println(structTable)
-
-		code_struct += fmt.Sprintf(`
-type %s struct {
-%s
+	generateSchema(database, table, "")
 }
 
-func (s %s) Name() string {
-	t := reflect.TypeOf(s)
-	return strings.ToLower(t.Name())
-}
-
-func (s %s) Columns() []string {
-	return migrator.EntityColumns(s)
-}
-
-func (s %s) Values() []any {
-	return migrator.EntityValues(s)
-}
-
-func (s *%s) Table() migrator.Entity {
-	return s.table
-}
-
-func (s *%s) ParseInsert() []migrator.Fields {
-	return migrator.GenerateSchema(s.table, migrator.INSERT)
-}
-
-func (s *%s) ParseUpdate() []migrator.Fields {
-	return migrator.GenerateSchema(s.table, migrator.UPDATE)
-}
-
-func (s *%s) ParseDelete() []migrator.Fields {
-	return migrator.GenerateSchema(s.table, migrator.DELETE)
-}
-`, tableName, strings.Join(structTable, "\n"), tableName, tableName, tableName, nameSchema, nameSchema, nameSchema, nameSchema)
-
-		codigo_schema += code_struct
-		texto := []byte(code_struct)
-		errs := os.WriteFile(fmt.Sprintf("%s%s.go", basePath, table), texto, 0644)
-		if errs != nil {
-			log.Fatal(errs)
-		}
-
-	}
+func GenerateSchemaFileWithSchema(database string, table string, schema string) {
+	generateSchema(database, table, schema)
 }
 
 func toPascalCase(input string) string {
@@ -224,7 +133,7 @@ func EntityColumns(s Entity) []string {
 		if !v.Field(i).CanInterface() {
 			continue
 		}
-		name := field.Tag.Get("tag")
+		name := field.Tag.Get("db")
 		if name == "" {
 			name = field.Name
 		}
@@ -239,25 +148,131 @@ func EntityValues(s Entity) []any {
 		v = v.Elem()
 	}
 
-	t := v.Type()
-
 	var values []any
 
 	for i := 0; i < v.NumField(); i++ {
-		field := t.Field(i)
 
 		// ignorar campos no exportados
 		if !v.Field(i).CanInterface() {
 			continue
 		}
-
-		name := field.Tag.Get("tag")
-		if name == "" {
-			name = field.Name
-		}
-
 		values = append(values, v.Field(i).Interface())
 	}
 
 	return values
+}
+
+func generateSchema(database string, table string, schema string) {
+	var queryInit string
+	if schema == "" {
+		queryInit = "SELECT table_name FROM Information_Schema.TABLES WHERE table_name='" + table + "'"
+	} else {
+		queryInit = fmt.Sprintf("SELECT table_name FROM Information_Schema.TABLES WHERE table_name='%s' and table_schema='%s'", table, schema)
+	}
+	resultTables := consultar(queryInit, database)
+	for _, v := range resultTables {
+		tableName := toPascalCase(v["table_name"].(string))
+		temp_table_name := strings.Split(tableName, "_")
+		table := temp_table_name[0]
+		nameSchema := "Schema" + table
+		var query_sql string
+		if schema == "" {
+			query_sql = fmt.Sprintf("SELECT * FROM Information_Schema.Columns where  TABLE_NAME='%s'", v["table_name"].(string))
+		} else {
+			query_sql = fmt.Sprintf("SELECT * FROM Information_Schema.Columns where  TABLE_NAME='%s' and table_schema='%s'", v["table_name"].(string), schema)
+		}
+		resultColumns := consultar(query_sql, database)
+		structTable := parseColumns(resultColumns, tableName)
+		saveFileTable(stringSchema(structTable, tableName, nameSchema), table)
+	}
+}
+
+func parseColumns(columns []map[string]any, table string) []string {
+	backticks := "`"
+	fmt.Println("tabla:", table, "   columnas:", len(columns))
+	var structTable []string
+	for _, column := range columns {
+		var tagColumn string
+		tagColumn += toPascalCase(column["column_name"].(string))
+		tagColumn += fmt.Sprintf(` %s %s json:"%s" db:"%s" tag:"%s"  validate:"required"`, dataTypeCollection[column["udt_name"].(string)], backticks, column["column_name"], column["column_name"], column["column_name"])
+
+		var validateType []string
+		if column["udt_name"] == "varchar" || column["udt_name"] == "char" || column["udt_name"] == "text" {
+			if column["udt_name"] != "text" {
+				max_length := int(column["character_maximum_length"].(int32))
+				if max_length != 36 {
+					if column["udt_name"] == "char" {
+						validateType = append(validateType, fmt.Sprintf(`min=%d`, max_length))
+					} else {
+						validateType = append(validateType, fmt.Sprintf(`min=%d`, int(math.Round(float64(max_length)*0.1))))
+					}
+					validateType = append(validateType, fmt.Sprintf(`max=%d`, max_length))
+				}
+			}
+			validateType = append(validateType, "case=lowercase")
+		} else if column["data_type"] == "integer" {
+			validateType = append(validateType, "max=10")
+		} else if column["udt_name"] == "float8" || column["udt_name"] == "real" {
+		} else if column["data_type"] == "date" {
+		} else if column["udt_name"] == "bool" {
+		}
+
+		tagColumn += fmt.Sprintf(` validateType:"%s" %s`, strings.Join(validateType, ";"), backticks)
+		structTable = append(structTable, tagColumn)
+
+	}
+	return structTable
+}
+
+func stringSchema(structTable []string, table string, nameSchema string) string {
+
+	code_struct := "package tables\n"
+	code_struct += fmt.Sprintf(`
+			type %s struct {
+				table %s
+			}
+			`, nameSchema, table)
+	code_struct += fmt.Sprintf(`
+type %s struct {
+%s
+}
+
+func (s %s) Name() string {
+	return strings.ToLower(reflect.TypeOf(s).Name())
+}
+
+func (s %s) Columns() []string {
+	return migrator.EntityColumns(s)
+}
+
+func (s %s) Values() []any {
+	return migrator.EntityValues(s)
+}
+
+func (s *%s) Table() migrator.Entity {
+	return s.table
+}
+
+func (s *%s) ParseInsert() []migrator.Fields {
+	return migrator.GenerateSchema(s.table, migrator.INSERT)
+}
+
+func (s *%s) ParseUpdate() []migrator.Fields {
+	return migrator.GenerateSchema(s.table, migrator.UPDATE)
+}
+
+func (s *%s) ParseDelete() []migrator.Fields {
+	return migrator.GenerateSchema(s.table, migrator.DELETE)
+}
+`, table, strings.Join(structTable, "\n"), table, table, table, nameSchema, nameSchema, nameSchema, nameSchema)
+	return code_struct
+}
+
+func saveFileTable(fileString string, table string) {
+	basePath := "./tmp/"
+	texto := []byte(fileString)
+	errs := os.WriteFile(fmt.Sprintf("%s%s.go", basePath, table), texto, 0644)
+	if errs != nil {
+		log.Fatal(errs)
+	}
 }

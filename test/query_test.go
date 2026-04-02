@@ -10,7 +10,6 @@ import (
 	"github.com/deybin/pgorm"
 	"github.com/deybin/pgorm/internal/adapters"
 	"github.com/deybin/pgorm/internal/core/clause"
-	"github.com/deybin/pgorm/internal/core/services"
 
 	tables "github.com/deybin/pgorm/test/table"
 )
@@ -21,8 +20,7 @@ func Test_QueryFullString(t *testing.T) {
 		fmt.Println(err)
 	}
 	defer db.Pool().Close()
-	var querySql = pgorm.NewQuery(db)
-	data, err := pgorm.QueryExec[map[string]any](querySql.WorkQueryFull("SELECT * FROM models WHERE id=$1", "550e8400-e29b-41d4-a716-446655440001"))
+	data, err := pgorm.ExecQuery[map[string]any](db, context.Background(), pgorm.NewQuery().WorkQueryFull("SELECT * FROM models WHERE id=$1", "550e8400-e29b-41d4-a716-446655440001"))
 	if err != nil {
 		t.Errorf("no se esperaba este error: %s", err.Error())
 		return
@@ -30,13 +28,9 @@ func Test_QueryFullString(t *testing.T) {
 	fmt.Println(data)
 }
 
-func Test_QuerySelect__Sintaxis(t *testing.T) {
-	db, err := adapters.NewPool(adapters.ConfigPgxAdapter{})
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer db.Pool().Close()
-	var querySql = pgorm.NewQuery(db)
+func Test_Query__Sintaxis(t *testing.T) {
+
+	var querySql = pgorm.NewQuery()
 
 	queryString := querySql.Select().From(tables.Models{}.Name()).String()
 	if strings.TrimSpace(queryString) != "SELECT * FROM models" {
@@ -78,7 +72,7 @@ func Test_QuerySelect__Sintaxis(t *testing.T) {
 	fmt.Println("sintaxis OK: ", queryString)
 	querySql.Reset()
 
-	queryString = querySql.Select().From(tables.Models{}.Name()).Where("atCreate", clause.BETWEEN, []interface{}{"2025-01-01", "2025-01-31"}).String()
+	queryString = querySql.Select().From(tables.Models{}.Name()).Where("atCreate", clause.BETWEEN, []any{"2025-01-01", "2025-01-31"}).String()
 	if strings.TrimSpace(queryString) != "SELECT * FROM models WHERE atCreate BETWEEN $1 AND $2" {
 		t.Errorf("query inesperado: %q", queryString)
 		return
@@ -86,7 +80,7 @@ func Test_QuerySelect__Sintaxis(t *testing.T) {
 	fmt.Println("sintaxis OK: ", queryString)
 	querySql.Reset()
 
-	queryString = querySql.Select().From(tables.Models{}.Name()).Where("age", clause.IN, []interface{}{18, 21, 30}).String()
+	queryString = querySql.Select().From(tables.Models{}.Name()).Where("age", clause.IN, []any{18, 21, 30}).String()
 	if strings.TrimSpace(queryString) != "SELECT * FROM models WHERE age IN ($1, $2, $3)" {
 		t.Errorf("query inesperado: %q", queryString)
 		return
@@ -119,23 +113,24 @@ func Test_QuerySelect__Sintaxis(t *testing.T) {
 	querySql.Reset()
 }
 
-func Test_QuerySelect__AllStruct(t *testing.T) {
+func Test_Query__Response(t *testing.T) {
 
 	db, err := adapters.NewPool(adapters.ConfigPgxAdapter{})
+
 	if err != nil {
 		fmt.Println(err)
 	}
 	defer db.Pool().Close()
-	var querySql = pgorm.NewQuery(db)
+	var querySql = pgorm.NewQuery()
 
-	data, err := pgorm.QueryExec[[]tables.Models](querySql.From(tables.Models{}.Name()).Select())
+	data, err := pgorm.ExecQuery[[]tables.Models](db, context.Background(), querySql.From(tables.Models{}.Name()).Select())
 	if err != nil {
 		t.Errorf("query inesperado: %q", err)
 		return
 	}
 	fmt.Println(data)
 
-	one, errOne := pgorm.QueryExec[tables.Models](querySql.From(tables.Models{}.Name()).Select().Where("document", clause.I, "12345678903"))
+	one, errOne := pgorm.ExecQuery[tables.Models](db, context.Background(), querySql.From(tables.Models{}.Name()).Select().Where("document", clause.I, "12345678903"))
 	if errOne != nil {
 		t.Errorf("query inesperado: %q", errOne)
 		return
@@ -147,15 +142,14 @@ func Test_QuerySelect__AllStruct(t *testing.T) {
 		Nombre   string `json:"name"`
 	}
 
-	// fmt.Println(querySql.From(tables.Models{}.Name()).Select("document, nombre").Where("document", clause.I, "12345678903").String())
-	one2, errOne2 := pgorm.QueryExec[response](querySql.From(tables.Models{}.Name()).Select("document, nombre").Where("document", clause.I, "12345678903"))
+	one2, errOne2 := pgorm.ExecQuery[response](db, context.Background(), querySql.From(tables.Models{}.Name()).Select("document, nombre").Where("document", clause.I, "12345678903"))
 	if errOne2 != nil {
 		t.Errorf("query inesperado: %q", errOne2)
 		return
 	}
 	fmt.Println(one2)
 
-	value, errValue := pgorm.QueryExec[tables.Models](querySql.From(tables.Models{}.Name()).Select())
+	value, errValue := pgorm.ExecQuery[tables.Models](db, context.Background(), querySql.From(tables.Models{}.Name()).Select())
 	if errValue != nil {
 		t.Errorf("query inesperado: %q", errValue)
 		return
@@ -163,44 +157,92 @@ func Test_QuerySelect__AllStruct(t *testing.T) {
 	fmt.Println(value)
 }
 
-func Test_QuerySelect__All(t *testing.T) {
+func Test_Query__ResponseWithSchema(t *testing.T) {
+
 	db, err := adapters.NewPool(adapters.ConfigPgxAdapter{})
+
 	if err != nil {
 		fmt.Println(err)
 	}
 	defer db.Pool().Close()
-	var querySql = pgorm.NewQuery(db)
-	data, err := pgorm.QueryExec[map[string]any](querySql.From(tables.Models{}.Name()))
+	var querySql = pgorm.NewQuery()
 
+	data, err := pgorm.ExecQueryWithSchema[[]tables.Models](db, "public", context.Background(), querySql.From(tables.Models{}.Name()).Select())
 	if err != nil {
-		t.Errorf("no se esperaba este error: %s", err.Error())
+		t.Errorf("query inesperado: %q", err)
 		return
 	}
 	fmt.Println(data)
 
-	type dbD struct {
-		Id     string
-		Nombre string
-		Age    int32
-		Email  string
+	one, errOne := pgorm.ExecQueryWithSchema[tables.Models](db, "public", context.Background(), querySql.From(tables.Models{}.Name()).Select().Where("document", clause.I, "12345678903"))
+	if errOne != nil {
+		t.Errorf("query inesperado: %q", errOne)
+		return
 	}
-	data2, err := services.QueryExec[[]dbD](querySql.From(tables.Models{}.Name()).Select("id,nombre,age"))
+	fmt.Println(one)
 
+	type response struct {
+		Document string `json:"document"`
+		Nombre   string `json:"name"`
+	}
+
+	one2, errOne2 := pgorm.ExecQueryWithSchema[response](db, "public", context.Background(), querySql.From(tables.Models{}.Name()).Select("document, nombre").Where("document", clause.I, "12345678903"))
+	if errOne2 != nil {
+		t.Errorf("query inesperado: %q", errOne2)
+		return
+	}
+	fmt.Println(one2)
+
+	value, errValue := pgorm.ExecQueryWithSchema[tables.Models](db, "public", context.Background(), querySql.From(tables.Models{}.Name()).Select())
+	if errValue != nil {
+		t.Errorf("query inesperado: %q", errValue)
+		return
+	}
+	fmt.Println(value)
+}
+
+func Test_Query__ResponseWithSchemaInContext(t *testing.T) {
+
+	db, err := adapters.NewPool(adapters.ConfigPgxAdapter{})
+	ctx := context.WithValue(context.Background(), pgorm.SchemaId, "public")
 	if err != nil {
-		t.Errorf("no se esperaba este error: %s", err.Error())
+		fmt.Println(err)
+	}
+	defer db.Pool().Close()
+	var querySql = pgorm.NewQuery()
+
+	data, err := pgorm.ExecQuery[[]tables.Models](db, ctx, querySql.From(tables.Models{}.Name()).Select())
+	if err != nil {
+		t.Errorf("query inesperado: %q", err)
 		return
 	}
-	fmt.Println(data2)
+	fmt.Println(data)
 
-	data3, err := services.QueryExec[dbD](querySql.From(tables.Models{}.Name()).Select().Where("id", "=", "dee"))
-
-	if err == nil {
-		t.Errorf("se esperaba un error ")
+	one, errOne := pgorm.ExecQuery[tables.Models](db, ctx, querySql.From(tables.Models{}.Name()).Select().Where("document", clause.I, "12345678903"))
+	if errOne != nil {
+		t.Errorf("query inesperado: %q", errOne)
 		return
 	}
+	fmt.Println(one)
 
-	fmt.Println(data3)
+	type response struct {
+		Document string `json:"document"`
+		Nombre   string `json:"name"`
+	}
 
+	one2, errOne2 := pgorm.ExecQuery[response](db, ctx, querySql.From(tables.Models{}.Name()).Select("document, nombre").Where("document", clause.I, "12345678903"))
+	if errOne2 != nil {
+		t.Errorf("query inesperado: %q", errOne2)
+		return
+	}
+	fmt.Println(one2)
+
+	value, errValue := pgorm.ExecQuery[tables.Models](db, ctx, querySql.From(tables.Models{}.Name()).Select())
+	if errValue != nil {
+		t.Errorf("query inesperado: %q", errValue)
+		return
+	}
+	fmt.Println(value)
 }
 
 func Test_QueryProcedure__Error(t *testing.T) {
@@ -209,10 +251,9 @@ func Test_QueryProcedure__Error(t *testing.T) {
 		fmt.Println(err)
 	}
 	defer db.Pool().Close()
-	var querySql = pgorm.NewQuery(db)
 
 	id := "94f596c6-0dd1-4eae-871a-37d1dac81b28"
-	err = querySql.WorkQueryFull(`
+	err = pgorm.ExecProcedure(db, context.Background(), pgorm.NewQuery().WorkQueryFull(`
 		DO $$
 			DECLARE
 						_num_credits int;
@@ -227,7 +268,7 @@ func Test_QueryProcedure__Error(t *testing.T) {
 						
 			END;
 		$$ LANGUAGE plpgsql;
-	`, id, id).Procedure()
+	`, id, id))
 
 	if err != nil {
 		if err.Error() != "mismatched param and argument count" {
@@ -246,10 +287,10 @@ func Test_Query_Contexto(t *testing.T) {
 		fmt.Println(err)
 	}
 	defer db.Pool().Close()
-	var querySql = pgorm.NewQuery(db)
+	var querySql = pgorm.NewQuery()
 	ctx := context.Background()
 
-	_, err = pgorm.QueryExecWithContext[[]map[string]any](ctx, querySql.From(tables.Models{}.Name()).Select("document,id"))
+	_, err = pgorm.ExecQuery[[]map[string]any](db, ctx, querySql.From(tables.Models{}.Name()).Select("document,id"))
 
 	fmt.Println("session permanecerá por 10s primera vez!!!")
 	time.Sleep(10 * time.Second)
@@ -258,7 +299,7 @@ func Test_Query_Contexto(t *testing.T) {
 		t.Errorf("No se esperaba este error: %v", err)
 	}
 
-	_, err = pgorm.QueryExecWithContext[[]map[string]any](ctx, querySql.From(tables.Models{}.Name()).Select("nombre,address"))
+	_, err = pgorm.ExecQuery[[]map[string]any](db, ctx, querySql.From(tables.Models{}.Name()).Select("nombre,address"))
 
 	fmt.Println("session permanecerá por 10s mas")
 	time.Sleep(10 * time.Second)
