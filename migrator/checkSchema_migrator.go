@@ -171,22 +171,35 @@ func CheckWhereGeneric(schemas []Fields, table_where ...Where) ([]Where, error) 
 func validaciones(item Fields, value any) (any, error) {
 	var val any
 	var err error
-	switch value.(type) {
+
+	switch v := value.(type) {
 	case string:
-		val, err = caseString(value.(string), item.ValidateType.(TypeStrings))
+		val, err = caseString(v, item.ValidateType.(TypeStrings))
+	case *string:
+		val, err = caseString(*v, item.ValidateType.(TypeStrings))
 	case float64:
-		val, err = caseFloat(value.(float64), item.ValidateType.(TypeFloat64))
+		val, err = caseFloat(v, item.ValidateType.(TypeFloat64))
+	case *float64:
+		val, err = caseFloat(*v, item.ValidateType.(TypeFloat64))
 	case uint64:
-		val, err = caseUint(value.(uint64), item.ValidateType.(TypeUint64))
+		val, err = caseUint(v, item.ValidateType.(TypeUint64))
+	case *uint64:
+		val, err = caseUint(*v, item.ValidateType.(TypeUint64))
 	case int64:
-		val, err = caseInt(value.(int64), item.ValidateType.(TypeInt64))
+		val, err = caseInt(v, item.ValidateType.(TypeInt64))
+	case *int64:
+		val, err = caseInt(*v, item.ValidateType.(TypeInt64))
 	case *time.Time:
-		val = value
+		val = v // Los tiempos se suelen manejar como punteros directamente
 	case bool:
-		val = value
+		val = v
+	case *bool:
+		val = *v // Ahora es seguro obtener el contenido
+
 	default:
 		val, err = nil, errors.New("tipo de dato no asignado")
 	}
+
 	return val, err
 }
 
