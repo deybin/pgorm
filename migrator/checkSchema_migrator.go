@@ -67,7 +67,11 @@ func CheckUpdateGeneric(schemas []Fields, tabla_map any) (map[string]any, error)
 		}
 		v := reflect.ValueOf(tabla_map)
 		val := v.FieldByName(item.NameOriginal)
-		isNil := val.IsZero()
+		isNil := val.IsValid()
+		if isNil {
+			isNil = val.IsZero()
+		}
+
 		// fmt.Println(isNil, ":", val.Interface(), ":", item.NameOriginal)
 		if !isNil {
 			if item.Update {

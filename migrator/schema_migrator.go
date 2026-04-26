@@ -183,14 +183,15 @@ func GenerateSchema(data any, action Actions) []Fields {
 		structSchema.Required = strings.Contains(validateTag, "required")
 
 		structSchema.Type = DataType(field.Type.String())
+		// fmt.Println(field.Type, ":", field.Name)
 		//fmt.Println("DataType(field.Type.Name()):", DataType(field.Type.String()))
 		if strings.Contains(validateTag, "default") {
 			structSchema.Default = value.Interface()
 		}
 		validateTypeTag := field.Tag.Get("validateType")
 		rules := strings.Split(validateTypeTag, ";")
-		switch structSchema.Type {
-		case String:
+		switch value.Interface().(type) {
+		case string, *string:
 			schemaType := TypeStrings{}
 			for _, rule := range rules {
 				if after, ok := strings.CutPrefix(rule, "min="); ok {
@@ -221,7 +222,7 @@ func GenerateSchema(data any, action Actions) []Fields {
 				}
 			}
 			structSchema.ValidateType = schemaType
-		case Float:
+		case float32, float64, *float32, *float64:
 			schemaType := TypeFloat64{}
 			for _, rule := range rules {
 				if after, ok := strings.CutPrefix(rule, "menor="); ok {
@@ -237,7 +238,7 @@ func GenerateSchema(data any, action Actions) []Fields {
 				}
 			}
 			structSchema.ValidateType = schemaType
-		case Int:
+		case int, int8, int16, int32, int64, *int, *int8, *int16, *int32, *int64:
 			schemaType := TypeInt64{}
 			for _, rule := range rules {
 				if after, ok := strings.CutPrefix(rule, "min="); ok {
@@ -251,7 +252,7 @@ func GenerateSchema(data any, action Actions) []Fields {
 				}
 			}
 			structSchema.ValidateType = schemaType
-		case Uint:
+		case uint, uint8, uint16, uint32, uint64, *uint, *uint8, *uint16, *uint32, *uint64:
 			schemaType := TypeUint64{}
 			for _, rule := range rules {
 				if after, ok := strings.CutPrefix(rule, "max="); ok {
@@ -260,7 +261,7 @@ func GenerateSchema(data any, action Actions) []Fields {
 				}
 			}
 			structSchema.ValidateType = schemaType
-		case Time:
+		case time.Time, *time.Time:
 			schemaType := TypeDate{}
 			structSchema.ValidateType = schemaType
 		}
