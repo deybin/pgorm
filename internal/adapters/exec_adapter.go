@@ -13,6 +13,7 @@ const (
 	INSERT
 	UPDATE
 	DELETE
+	SCRIPT
 )
 
 type DataExec struct {

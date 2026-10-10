@@ -60,6 +60,12 @@ func NewSqlExecSingles(s migrator.Schema, datos ...migrator.Entity) *services.Sq
 	}
 }
 
+func NewSqlExecSinglesScript() *services.SqlExecSingles {
+	return &services.SqlExecSingles{
+		Transactions: domain.NewTransactionEmpty(),
+	}
+}
+
 func ExecTransaction(db ports.DBPort, ctx context.Context, s *services.SqlExecSingles) error {
 	return db.ExecuteTransactions(ctx, s.Transactions.Query()...)
 }

@@ -88,6 +88,20 @@ func (sq *SqlExecSingles) Delete(dataDelete ...migrator.Where) error {
 	return nil
 }
 
+/*
+Valida los datos para Eliminar y crea el query para Eliminar
+
+	Return
+		- (error): retorna errores ocurridos en la validación
+*/
+func (sq *SqlExecSingles) Script(query string, data ...any) error {
+	sq.Transaction().SetAction(adapters.SCRIPT)
+	if err := builder.BuilderScriptGeneric(sq.Transaction(), query, data...); err != nil {
+		return errors.New(strings.Join(sq.errors, "; "))
+	}
+	return nil
+}
+
 /*******************************Crud Multiples************************************/
 
 func NewSqlExecMulti() *SqlExecMultiples {

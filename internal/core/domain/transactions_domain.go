@@ -27,6 +27,10 @@ func NewTransaction(s migrator.Schema, datos ...migrator.Entity) Transactions {
 	return Transactions{ob: datos, schema: s}
 }
 
+func NewTransactionEmpty() Transactions {
+	return Transactions{}
+}
+
 func (t Transactions) Schema() migrator.Schema {
 	return t.schema
 }
